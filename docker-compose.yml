@@ -1,0 +1,23 @@
+services:
+  forge_db:
+    image: timescale/timescaledb:latest-pg16
+    container_name: empire_forge_db
+    restart: unless-stopped
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_DB: empire_forge_db
+      POSTGRES_USER: forge_admin
+      POSTGRES_PASSWORD: ${FORGE_DB_PASSWORD:-qfCTPwAoGhhwKxIJuGX/fHhnaeyLTjqT6R+Poi0XaKo=}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - forge_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forge_admin -d empire_forge_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  forge_data:
