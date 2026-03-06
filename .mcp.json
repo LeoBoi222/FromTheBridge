@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "forge-catalog": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://forge_reader@192.168.68.11:5433/crypto_structured?sslmode=disable"
+      ]
+    }
+  }
+}
