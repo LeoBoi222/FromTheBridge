@@ -1,0 +1,15 @@
+# Agent reports (accumulated, not versioned)
+.claude/reports/*.json
+
+# Editor locks
+.~lock.*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Environment
+.env
+.env.local
