@@ -230,16 +230,50 @@ becomes an additional revenue surface, not the primary product.
 
 ### Revenue Streams (Multi-Stream from Day One)
 
-**Stream 1 — Direct subscriptions (tiered)**
-Prosumer to institutional tiers. API access gated by feature depth and history. Lowest
-friction to start.
+**Stream 1 — Direct subscriptions (hybrid tier + module model)**
+Tiers set access level and contract structure; modules set entitlement scope within
+tiers. Identity-neutral naming — tiers describe what the customer gets, not what
+they are.
 
-| Tier | Price | Included |
-|---|---|---|
-| Free Preview | $0 | 48h-delayed top-10 composite score on website. No account. No API. |
-| Pro | $199/month · $1,990/year | Full composite all instruments, pillar attribution, ML probabilities, confidence, regime, 365d history, REST JSON API, daily digest |
-| Protocol | $2,500–$5,000/month | Full pillar attribution, all redistribution-permitted fields, higher rate limits, scoped instrument list. API tier — not consulting. |
-| Institutional | $2,500/month | Everything in Pro + Arrow Flight bulk, redistribution rights (where ToS permits), dedicated support |
+| Tier | Renamed | Audience | Contract | Price |
+|---|---|---|---|---|
+| Free | Preview | Public | None | $0 |
+| Pro | Signal API | Individual traders, quant researchers, small funds | Monthly or annual, self-serve | $199/month · $1,990/year |
+| Institutional | Intelligence Suite | Asset managers, crypto hedge funds, family offices | Annual, direct sales | $2,500/month |
+| Exchange | Risk Feed | Exchanges, market makers, prop desks | Annual, direct sales | Custom |
+| Protocol | Ecosystem Monitor | Foundations, DAOs, protocol treasuries | Annual, direct sales or addendum on Institutional | $2,500–$5,000/month |
+
+**Preview tier:** 48h-delayed composite top-10 on website only. No account. No API.
+
+**Module-Tier Access Matrix:**
+
+| Module | Preview | Signal API | Intelligence Suite | Risk Feed | Ecosystem Monitor |
+|---|---|---|---|---|---|
+| Derivatives Intelligence Feed | — | ✅ | ✅ | ✅ | — |
+| Market Regime Engine | — | ✅ (30d) | ✅ (full) | ✅ | ✅ |
+| Liquidation Risk Monitor | — | — | ✅ | ✅ (primary) | — |
+| Flow Intelligence | — | — | ✅ | — | — |
+| Protocol Health Score | — | — | — | — | ✅ (primary) |
+| On-Chain Valuation Monitor | — | ✅ | ✅ | — | ✅ |
+
+**Coverage by Tier and Licensing State:**
+
+When a source is `blocked` or `pending`, derived fields are null-flagged per the
+redistribution enforcement model. This table shows what customers lose per tier:
+
+| Module | Affected Sources | Fields Suppressed When Blocked | Tiers Affected |
+|--------|-----------------|-------------------------------|----------------|
+| Derivatives Intelligence Feed | Coinalyze (`pending`) | Funding rate, OI, liquidations, L/S ratio | Signal API, Intelligence Suite, Risk Feed |
+| Flow Intelligence | SoSoValue (`blocked`), Etherscan (`pending`) | ETF flows (SoSoValue), exchange net flows (Etherscan) | Intelligence Suite |
+| Liquidation Risk Monitor | Binance BLC-01 (`pending`) | Real-time tick liquidations | Intelligence Suite, Risk Feed |
+| On-Chain Valuation Monitor | BGeometrics (`pending`), CoinMetrics (`blocked`) | MVRV, SOPR, NUPL, Puell (BGeometrics); transfer volume (CoinMetrics) | Signal API, Intelligence Suite, Ecosystem Monitor |
+| Protocol Health Score | DeFiLlama (`allowed`) | None — DeFiLlama is redistribution-clear | Ecosystem Monitor |
+| Market Regime Engine | FRED (`allowed`) | None — FRED is public domain | All paid tiers |
+
+**DG-R1 resolution effect:** After Phase 4 ToS audits clear Coinalyze, BGeometrics,
+Etherscan, and BLC-01, the `pending` rows above transition to `allowed`. Only
+SoSoValue and CoinMetrics remain `blocked` at Phase 5 launch — affecting Flow
+Intelligence ETF flows and On-Chain transfer volume respectively.
 
 Annual plan at $1,990 = ~16% discount (2 months free). Manual invoicing at sub-20
 customers. Stripe deferred: trigger = 20+ active subscribers.
@@ -250,9 +284,9 @@ customers. Stripe deferred: trigger = 20+ active subscribers.
 
 | Milestone | Target MRR | Path |
 |---|---|---|
-| 6 months | $2,000/month | 10 Pro subscribers OR 1 protocol engagement ($4.5k) |
-| 12 months | $8,000/month | ~35 Pro OR 20 Pro + 1 protocol retainer ($18k/quarter) |
-| 18 months | $20,000/month | ~60 Pro + 2 protocol retainers + 1 institutional |
+| 6 months | $2,000/month | 10 Signal API subscribers OR 1 Ecosystem Monitor engagement ($4.5k) |
+| 12 months | $8,000/month | ~35 Signal API OR 20 Signal API + 1 Ecosystem Monitor retainer ($18k/quarter) |
+| 18 months | $20,000/month | ~60 Signal API + 2 Ecosystem Monitor retainers + 1 Intelligence Suite |
 
 **Stream 2 — API data licensing (B2B)**
 Counterparties pay for normalized, auditable, attributed data to power their own
@@ -264,9 +298,9 @@ relationship-driven. Layer 3 is the product surface for this stream.
 Priority targets: Aave (primary), Uniswap, Lido, ARB Foundation, Solana Foundation
 (long-lead). v0 Aave report drafted during Phase 3 as a production validation test.
 Ecosystem reports are bespoke consulting engagements fulfilled manually — not an API
-product tier. Protocol tier API access and consulting engagements are independent:
-a protocol client may have both, either, or neither. Consulting uses custom contract
-addenda, not the entitlement middleware.
+product tier. Ecosystem Monitor tier API access and consulting engagements are
+independent: a protocol client may have both, either, or neither. Consulting uses
+custom contract addenda, not the entitlement middleware.
 
 | Engagement Type | Price | Notes |
 |---|---|---|
@@ -277,15 +311,17 @@ addenda, not the entitlement middleware.
 
 Payment terms: 50% on engagement, 50% on delivery. Never go below $4,500.
 
-**Stream 4 — Index / benchmark licensing**
+**Stream 4 — Index / benchmark licensing (future state)**
 Rules-based index constructed from the canonical data, licensed to financial product
-issuers for settlement benchmarks. Deferred to v2 — requires methodology
-documentation and legal structure, but the data infrastructure is already the hard
-part.
+issuers for settlement benchmarks. Deferred until live conversion evidence exists —
+requires methodology documentation, legal structure, and proven demand. The data
+infrastructure is already the hard part, but commercial emphasis stays on Streams 1–3
+until index licensing has an identified buyer.
 
-**Stream 5 — Embedded analytics (white-label)**
+**Stream 5 — Embedded analytics / white-label (future state)**
 Signal engine or data feeds embedded in a fund or exchange's own interface. Sticky,
-large contracts, longer sales cycles.
+large contracts, longer sales cycles. Deferred until Streams 1–3 have traction —
+no commercial emphasis until an inbound request validates demand.
 
 ### Content Originality
 
@@ -307,11 +343,11 @@ research. Acquired via content pull — no cold outreach.
 **Profile B — Protocol Ecosystem (acquired second):**
 Protocol foundation or ecosystem DAO. Direct outreach + warm intro path. Minimum 3
 Profile A subscribers + 60-day live history before first approach. Revenue leverage:
-the first $4,500–$18,000 engagement is worth more than 50 Pro subscribers.
+the first $4,500–$18,000 engagement is worth more than 50 Signal API subscribers.
 
 **Sequencing:** Profile A builds reputation that funds the business via Profile B.
-Shadow period → Profile A content pull (shadow week 4) → Pro tier opens (Phase 5 gate)
-→ Profile B outreach at 60 days post-launch.
+Shadow period → Profile A content pull (shadow week 4) → Signal API tier opens (Phase 5
+gate) → Profile B outreach at 60 days post-launch.
 
 **48h-Delayed Public Preview:**
 Top-10 composite score (top 5 / bottom 5) on `fromthebridge.net`, updated daily, 48h
@@ -357,7 +393,7 @@ cadence and attract organic Profile A discovery.
 | 7 | Draft methodology document (~3,000 words, all pillars, null states, PIT). | 3h |
 | 8 | Publish methodology at fromthebridge.net/methodology. Draft v0 Aave report. | 4h |
 | 10 | Phase 4 shadow begins. Second Twitter/X thread (domain market structure). | 2h |
-| 12 | Add pricing page. Launch Pro tier. First protocol outreach to Aave. | 3h |
+| 12 | Add pricing page. Launch Signal API tier. First Ecosystem Monitor outreach to Aave. | 3h |
 | 14 | Third Twitter/X thread using shadow performance data. | 2h |
 | 16 | Follow up Aave. Introduce pricing. Draft Uniswap outreach. | 2h |
 
@@ -390,16 +426,17 @@ paying real money.
 | MVP | Signal product, institutional early access, manual invoicing |
 | Not in v1 | Dashboard UI, self-serve billing, content products |
 | Index licensing | v2 — deferred. Trigger: methodology documented + ToS audited |
-| Pro pricing | $199/month · $1,990/year (~16% discount). Manual invoicing. (F1) |
-| Protocol pricing | $2,500–$5,000/month API tier. Consulting engagements (Stream 3) priced separately. (F1) |
-| Institutional pricing | $2,500/month. Sales-only. Phase 6. (F1) |
+| Signal API pricing | $199/month · $1,990/year (~16% discount). Manual invoicing. (F1) |
+| Ecosystem Monitor pricing | $2,500–$5,000/month API tier. Consulting engagements (Stream 3) priced separately. (F1) |
+| Intelligence Suite pricing | $2,500/month. Sales-only. Phase 6. (F1) |
+| Risk Feed pricing | Custom. Annual contract, direct sales. (F1) |
 | Stripe | Deferred. Trigger: 20+ active subscribers. (F1) |
 | Profile A acquisition | Content pull. No cold outreach. Self-serve after Phase 5 gate. (F1) |
 | Profile B acquisition | Direct outreach + warm intro. ≥3 Profile A + 60d history first. (F1) |
 | Public preview | 48h-delayed top-10 composite. No account. Shadow week 2. (F1) |
 | Primary content asset | PIT-correctness post (2,000 words). Twitter/X + Substack. (F1) |
 | GTM sprint | ~27 hours / 90 days. Batched during build pauses. (F1) |
-| Pro tier opens | After Phase 5 gate (not Phase 4 shadow). (F1) |
+| Signal API tier opens | After Phase 5 gate (not Phase 4 shadow). (F1) |
 
 ---
 
@@ -2373,23 +2410,26 @@ uniform audit trail and rate limiting. No unauthenticated bypass.
 Raw key never stored — only argon2id hash in `forge.api_keys`. Customer delivery via
 1Password secure share (one-time-view link); never email plaintext.
 
-**4-Tier Plan Matrix (supersedes all prior Free/Paid binary references):**
+**5-Tier Hybrid Model (supersedes all prior Free/Paid binary and 4-tier references):**
 
-| Dimension | Free | Pro | Protocol | Institutional |
-|---|---|---|---|---|
-| Endpoints | /v1/market/prices, /v1/macro, /v1/instruments, /v1/health | All Free + /v1/signals, /v1/signals/{id}, /v1/signals/performance, /v1/regime | Same as Pro | All Pro + /v1/features/{id} |
-| Instruments | Full catalog (metadata only) | All signal-eligible | Protocol-scoped list (customer override) | All signal-eligible |
-| Signal fields | N/A | Composite direction + confidence + confidence_tier + full pillar breakdown + ML components | Same as Pro | All Pro + raw feature values + provenance trace |
-| Lookback window | 30 days | 365 days | 365 days | 5 years (1,825 days) |
-| Rate limit (RPM) | 30 | 120 | 120 | 300 |
-| Rate limit (RPD) | 1,000 | 20,000 | 20,000 | 100,000 |
-| Burst allowance | +10 above RPM | +30 above RPM | +30 above RPM | +80 above RPM |
-| Concurrent limit | 2 | 5 | 5 | 20 |
-| Webhook | No | Yes | Yes | Yes |
-| Telegram alerts | No | Yes | Yes | Yes |
-| Provenance trace | No | No | No | Yes |
-| Raw feature values | No | No | No | Yes (/v1/features/{id}) |
-| Redistribution-blocked | Always suppressed + `_redistribution_notice` | Same | Same | Same |
+Tiers set access level and contract structure. Modules set entitlement scope within
+tiers. See §Revenue Streams for the module-tier access matrix.
+
+| Dimension | Preview (Free) | Signal API (Pro) | Intelligence Suite (Institutional) | Risk Feed (Exchange) | Ecosystem Monitor (Protocol) |
+|---|---|---|---|---|---|
+| Endpoints | /v1/market/prices, /v1/macro, /v1/instruments, /v1/health | All Free + /v1/signals, /v1/signals/{id}, /v1/signals/performance, /v1/regime | All Signal API + /v1/features/{id} | All Signal API + /v1/liquidations (BLC-01) | All Signal API |
+| Instruments | Full catalog (metadata only) | All signal-eligible | All signal-eligible | Custom instrument coverage | Scoped to customer instrument set (customer override) |
+| Signal fields | N/A | Composite direction + confidence + confidence_tier + pillar breakdown + ML components (per module access) | All Signal API + raw feature values + provenance trace | Signal API fields + real-time BLC-01 | Signal API fields scoped to customer instruments |
+| Lookback window | 30 days | 365 days | 5 years (1,825 days) | 365 days | 365 days |
+| Rate limit (RPM) | 30 | 120 | 300 | 300 | 120 |
+| Rate limit (RPD) | 1,000 | 20,000 | 100,000 | 100,000 | 20,000 |
+| Burst allowance | +10 above RPM | +30 above RPM | +80 above RPM | +80 above RPM | +30 above RPM |
+| Concurrent limit | 2 | 5 | 20 | 20 | 5 |
+| Webhook | No | Yes | Yes | Yes | Yes |
+| Telegram alerts | No | Yes | Yes | Yes | Yes |
+| Provenance trace | No | No | Yes | No | No |
+| Raw feature values | No | No | Yes (/v1/features/{id}) | No | No |
+| Redistribution-blocked | Always suppressed + `_redistribution_notice` | Same | Same | Same | Same |
 
 **Redistribution enforcement:** Three-state enum (`allowed`/`pending`/`blocked`)
 per source. Configurable propagation via `propagate_restriction` flag per source
@@ -2419,10 +2459,11 @@ components are blocked. See §Redistribution Enforcement for full spec.
 
 | Tier | RPM | RPD | Burst | Concurrent |
 |---|---|---|---|---|
-| Free | 30 | 1,000 | +10 | 2 |
-| Pro | 120 | 20,000 | +30 | 5 |
-| Protocol | 120 | 20,000 | +30 | 5 |
-| Institutional | 300 | 100,000 | +80 | 20 |
+| Preview (Free) | 30 | 1,000 | +10 | 2 |
+| Signal API (Pro) | 120 | 20,000 | +30 | 5 |
+| Intelligence Suite (Institutional) | 300 | 100,000 | +80 | 20 |
+| Risk Feed (Exchange) | 300 | 100,000 | +80 | 20 |
+| Ecosystem Monitor (Protocol) | 120 | 20,000 | +30 | 5 |
 
 Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
 HTTP 429 on breach with `Retry-After` header.
@@ -2446,8 +2487,8 @@ customers). Not designed for self-serve at scale — that requires Stripe integr
 ```
 Customer (org-level)
   ├── 1+ API Keys (independent lifecycle)
-  ├── 1 Subscription (plan + billing period)
-  ├── 0-1 Customer Instrument Overrides (Protocol tier only)
+  ├── 1 Subscription (plan + modules + billing period)
+  ├── 0-1 Customer Instrument Overrides (Ecosystem Monitor + Risk Feed tiers)
   └── Audit trail (via audit_access_log)
 ```
 
@@ -2459,20 +2500,21 @@ Customer (org-level)
 | `name` | TEXT NOT NULL | Organization or individual name |
 | `email` | TEXT NOT NULL UNIQUE | Primary contact — used for 1Password delivery |
 | `account_state` | TEXT NOT NULL | `active`, `suspended`, `closed` |
-| `tier` | TEXT NOT NULL | `free`, `pro`, `protocol`, `institutional` |
+| `tier` | TEXT NOT NULL | `preview`, `signal_api`, `intelligence_suite`, `risk_feed`, `ecosystem_monitor` |
 | `notes` | TEXT | Operator notes — engagement context, contract reference |
 | `created_at` | TIMESTAMPTZ | |
 | `suspended_at` | TIMESTAMPTZ | NULL unless suspended |
 
-**No org hierarchy in v1.** Each customer is a flat entity. If a Protocol customer
-needs multiple API keys for different systems, those keys share the same `customer_id`.
-No sub-accounts, no teams, no delegated admin.
+**No org hierarchy in v1.** Each customer is a flat entity. If an Ecosystem Monitor
+or Risk Feed customer needs multiple API keys for different systems, those keys share
+the same `customer_id`. No sub-accounts, no teams, no delegated admin.
 
 #### Contract Representation
 
 **v1:** Contracts are implicit in the `subscriptions` table (`plan_id`, `starts_at`,
-`ends_at`). Protocol tier contracts reference a written agreement (stored externally —
-email thread or PDF). The `customers.notes` field records the contract reference.
+`ends_at`). Intelligence Suite, Risk Feed, and Ecosystem Monitor contracts reference
+a written agreement (stored externally — email thread or PDF). The `customers.notes`
+field records the contract reference.
 
 **No entitlement versioning in v1.** Plan changes take effect immediately via
 `UPDATE subscriptions SET plan_id = $new_plan`. Old entitlements are not preserved —
@@ -2482,12 +2524,24 @@ the audit log captures historical access patterns, not historical entitlement st
 when contract complexity requires it. Trigger: first customer requesting mid-cycle
 plan change with prorated billing.
 
+**v2 entity model expansion (deferred):** When self-serve billing or contract
+complexity warrants it, split into: `customer_org` (org hierarchy), `contract`
+(explicit agreement records), `plan_version` (versioned entitlement snapshots),
+`entitlement_override` (per-customer exceptions), `redistribution_addendum`
+(source-specific licensing terms per customer), `key_scope_history` (audit trail of
+key permission changes). Trigger: 20+ active subscribers or first Intelligence Suite
+contract with complex terms. Not in v1 — the flat model is sufficient for ≤30
+manual-managed customers.
+
 #### Override Scopes
 
-**`customer_instrument_overrides`:** Protocol tier customers receive a scoped
-instrument list defined during engagement. This table maps `(customer_id,
-instrument_id)` with inclusion/exclusion semantics. Default: exclude (only explicitly
-listed instruments are accessible). Overrides apply to all endpoints.
+**`customer_instrument_overrides`:** Ecosystem Monitor and Risk Feed tier customers
+receive a scoped instrument list defined during engagement (the instrument coverage
+set). This table maps `(customer_id, instrument_id)` with inclusion/exclusion
+semantics. Default: exclude (only explicitly listed instruments are accessible).
+Overrides apply to all endpoints. The entitlement record for these tiers must carry
+an `instrument_coverage_set` concept — the set of instruments the customer has
+contracted access to.
 
 #### Revocation Semantics
 
@@ -2707,45 +2761,43 @@ Five query patterns documented for vendor compliance (full SQL in Thread A2 resu
 4. **Source-level enforcement summary** — per-source filter rate report for periodic compliance review
 5. **Point-in-time proof for vendor audit** — date-range scoped evidence for specific vendor request
 
-All queries filter to external customers only (`tier != 'internal'`).
+All queries filter to external customers only (`tier NOT IN ('internal')`).
 
 #### Decision Gate: Redistribution Impact on Product Quality (DG-R1)
 
-**Status:** Open — requires architect decision before Phase 5 build prompt.
+**Status:** Resolved — Option B chosen. Date: 2026-03-06.
 
-**Context:** At launch, Coinalyze, BGeometrics, Etherscan, and BLC-01 have `pending`
-redistribution status. SoSoValue and CoinMetrics are `blocked`. With default
-`propagate_restriction = true`, this suppresses derivatives and capital flow data
-in external responses.
+**Decision:** Option B — Expedite ToS audits for `pending` sources during Phase 4
+shadow period.
 
-**Product degradation at launch (current defaults):**
+**Resolution details:**
 
-| Component | Impact | Severity |
-|-----------|--------|----------|
-| EDSx `derivatives_pressure` pillar | Suppressed (Coinalyze `pending`) | **High** — 1 of 2 live pillars lost |
-| EDSx `liquidity_flow` pillar | Partially suppressed (Etherscan `pending`, SoSoValue `blocked`) | **High** — remaining live pillar degraded |
-| ML `Capital Flow Direction` model | Suppressed (SoSoValue `blocked`) | Medium — shadow period model |
-| ML `Derivatives Pressure` model | Suppressed (Coinalyze `pending`) | Medium — shadow period model |
-| Composite score | Severely degraded — `synthesis_degraded = true` on most signals | **High** — product value gap |
+1. **Coinalyze, BGeometrics, Etherscan, BLC-01** ToS audits run in parallel during
+   Phase 4 shadow period (not deferred to Phase 6). Target: all four cleared to
+   `allowed` before Phase 5 gate.
+2. **SoSoValue and CoinMetrics** remain `blocked` (harder ToS — non-commercial and
+   internal-only respectively). Phase 6 ToS audit or paid tier negotiation.
+3. **Phase 5 launch posture:** Flow Intelligence ETF flow fields (SoSoValue-sourced)
+   launch with conditional null-flagging if SoSoValue ToS is unresolved at Phase 5.
+   Fields return `value: null` with `redistribution_status: "blocked"` and
+   `blocking_sources: ["sosovalue"]`. This is not product degradation — it is
+   expected and documented in methodology.
+4. **Phase dependency:** Phase 4 shadow period is the audit window for the four
+   `pending` sources. If any audit is not complete by Phase 5 gate, those sources
+   remain `pending` and their derived fields are null-flagged at launch (same
+   mechanism as SoSoValue). This is a graceful degradation, not a blocker.
 
-**Decision required (choose one):**
+**Rationale:** Option B eliminates the severe product degradation (both live pillars
+suppressed) while keeping the harder ToS cases (SoSoValue/CoinMetrics) on their
+natural timeline. The Phase 4 shadow period provides 30+ days — sufficient for
+straightforward ToS audits of free-tier APIs.
 
-- **Option A — Accept degraded product at launch.** Ship with suppression. Price
-  reflects reduced coverage. Methodology doc states which pillars are suppressed and
-  why. Acceptable if ToS audits for Coinalyze/BGeometrics/Etherscan/BLC-01 are
-  expected to clear within 30 days of Phase 6.
-- **Option B — Expedite ToS audits.** Complete Coinalyze, BGeometrics, Etherscan,
-  BLC-01 audits during Phase 4 shadow period (not Phase 6). Unlocks derivatives
-  and flow pillars for launch. SoSoValue/CoinMetrics remain `blocked` (harder ToS).
-- **Option C — Treat sufficiently transformed outputs as non-derivative.** Composite
-  scores and pillar scores are algorithmic transformations, not raw redistribution.
-  Set `propagate_restriction = false` for `pending` sources only. Legal review
-  recommended before choosing this.
-
-**Gate enforcement:** This decision must be recorded in this section with chosen
-option, rationale, and date before Phase 3 build prompt is issued. Moved from
-Phase 5 to Phase 3 so the Phase 4 shadow period can accommodate a parallel ToS
-audit track if Option B is chosen.
+**Context (preserved for reference):** At launch with default `propagate_restriction
+= true`, suppression of `pending` sources would affect EDSx derivatives_pressure
+pillar (Coinalyze), EDSx liquidity_flow pillar (Etherscan + SoSoValue), ML Capital
+Flow Direction model (SoSoValue), ML Derivatives Pressure model (Coinalyze), and
+composite score (severely degraded). Option B resolves the `pending` sources; the
+`blocked` sources (SoSoValue/CoinMetrics) produce documented null-flagged fields.
 
 #### Open Assumptions (Require Architect Confirmation Before Phase 3/5)
 
@@ -2761,7 +2813,7 @@ audit track if Option B is chosen.
 
 ### API Endpoints
 
-#### Free Tier
+#### Preview Tier (Free)
 
 **`GET /v1/market/prices`**
 Current price, market cap, and 24h change for the crypto instrument universe.
@@ -2775,7 +2827,7 @@ redistribution restriction. No parameters.
 **`GET /v1/instruments`**
 The full instrument catalog. Parameters: `domain`, `signal_eligible` (boolean).
 
-#### Pro Tier (and above)
+#### Signal API Tier (and above)
 
 **`GET /v1/signals`**
 Full universe signal snapshot. The primary entry point. Parameters: `direction`,
@@ -2823,7 +2875,7 @@ affected). Includes `signals_last_computed` and `stale_instrument_count`.
 ### Performance History Endpoint (B3)
 
 **`GET /v1/signals/performance`** — Phase 5 scope addition. Customer conversion gate:
-a sophisticated buyer evaluating Pro or Institutional subscription requires a
+a sophisticated buyer evaluating Signal API or Intelligence Suite subscription requires a
 machine-readable track record before committing.
 
 #### Design Principles
@@ -2844,12 +2896,12 @@ machine-readable track record before committing.
 |---|---|---|---|---|
 | `instrument_id` | string | Any valid instrument_id | omitted | Omit for cross-sectional summary |
 | `horizon` | enum | `1d` · `7d` · `14d` · `30d` · `all` | `14d` | EDSx: 1d/7d/30d; ML: 14d only |
-| `window` | enum | `30` · `90` · `180` · `365` · `all` | `365` | Trailing calendar days. Pro capped at 365. |
+| `window` | enum | `30` · `90` · `180` · `365` · `all` | `365` | Trailing calendar days. Signal API capped at 365. |
 | `track` | enum | `edsx` · `ml` · `composite` · `all` | `composite` | Which signal track to evaluate |
 | `from` | ISO 8601 | timestamp | null | Overrides window start if both present — from/to wins, warning returned |
 | `to` | ISO 8601 | timestamp | null | Defaults to latest resolved outcome date |
 
-Authentication: API key required. Free tier returns HTTP 403. Pro tier: window capped
+Authentication: API key required. Preview tier returns HTTP 403. Signal API tier: window capped
 at 365 days. Institutional: all values permitted. `from`/`to` and `window` are mutually
 exclusive. If both supplied, `from`/`to` takes precedence and `window` is ignored; an
 explicit `parameter_override_warning` field is returned.
@@ -3085,18 +3137,18 @@ decision-useful for signal evaluation; not a portfolio construction tool.
 
 #### Field-Tier Mapping
 
-| Response Field | Free | Pro (365d) | Protocol | Institutional |
-|---|---|---|---|---|
-| `meta.*` (all metadata) | HTTP 403 | ✓ | ✓ | ✓ |
-| `directional_accuracy.*` | HTTP 403 | ✓ (365d) | ✓ | ✓ (all) |
-| `return_attribution.quintile_returns` | HTTP 403 | ✓ | ✓ | ✓ |
-| `return_attribution.strategy_sharpe` | HTTP 403 | ✓ | ✓ | ✓ |
-| `calibration.ece` + `brier_score` | HTTP 403 | ✓ | ✓ | ✓ |
-| `calibration.reliability_diagram` | HTTP 403 | ✗ | ✗ | ✓ |
-| `regime_conditional.*` | HTTP 403 | ✓ | ✓ | ✓ |
-| `pillar_attribution.*` | HTTP 403 | ✗ | ✓ (scoped to pillars with ≥1 metric sourced from instruments in the customer's `customer_instrument_overrides` coverage set; pillars outside coverage return null with `_scope_limited` flag) | ✓ |
-| `window=all` (full history) | HTTP 403 | ✗ (capped 365d) | ✗ | ✓ |
-| Cross-sectional (no `instrument_id`) | HTTP 403 | ✓ | ✓ | ✓ |
+| Response Field | Preview | Signal API (365d) | Intelligence Suite | Risk Feed | Ecosystem Monitor |
+|---|---|---|---|---|---|
+| `meta.*` (all metadata) | HTTP 403 | ✓ | ✓ | ✓ | ✓ |
+| `directional_accuracy.*` | HTTP 403 | ✓ (365d) | ✓ (all) | ✓ (365d) | ✓ (365d) |
+| `return_attribution.quintile_returns` | HTTP 403 | ✓ | ✓ | ✓ | ✓ |
+| `return_attribution.strategy_sharpe` | HTTP 403 | ✓ | ✓ | ✓ | ✓ |
+| `calibration.ece` + `brier_score` | HTTP 403 | ✓ | ✓ | ✓ | ✓ |
+| `calibration.reliability_diagram` | HTTP 403 | ✗ | ✓ | ✗ | ✗ |
+| `regime_conditional.*` | HTTP 403 | ✓ | ✓ | ✓ | ✓ |
+| `pillar_attribution.*` | HTTP 403 | ✗ | ✓ | ✗ | ✓ (scoped to pillars with ≥1 metric sourced from instruments in the customer's `customer_instrument_overrides` coverage set; pillars outside coverage return null with `_scope_limited` flag) |
+| `window=all` (full history) | HTTP 403 | ✗ (capped 365d) | ✓ | ✗ | ✗ |
+| Cross-sectional (no `instrument_id`) | HTTP 403 | ✓ | ✓ | ✓ | ✓ |
 
 Enforcement via the same response middleware pattern as redistribution filtering.
 The computation layer is tier-agnostic; redacted fields are replaced with null and a
@@ -3218,7 +3270,7 @@ FastAPI. Event-driven — no polling.
 **Entitlement model (Option C):** Redistribution filter applied at cache populate time.
 Gated field values (SoSoValue, CoinMetrics) are never present in the `app.state` cache
 object — enforcement is structural, not per-request policy. Per-request tier filtering
-(Pro/Protocol/Institutional field redaction) adds microseconds only.
+(per-tier field redaction) adds microseconds only.
 
 **Warm start:** On FastAPI restart, lifespan reads `gold/snapshots/latest.json` from
 MinIO. Cache warm in <5s. `/healthz/ready` returns 503 until `cache.ready=True`. Docker
@@ -3250,6 +3302,46 @@ HTTP error. On cache miss (startup only): live DuckDB Gold query with 5s timeout
 | `GET /v1/signals` (full universe, cache hit) | < 20ms | < 50ms | < 100ms |
 | `GET /v1/signals/{instrument_id}` (cache hit) | < 5ms | < 15ms | < 30ms |
 | Cache miss — live DuckDB fallback | ~2s | ~5s | < 5s (timeout) |
+
+### Serving Concurrency Envelope
+
+Design bounds for the FastAPI serving layer. Values are internal build-time targets —
+not customer-facing SLAs. Prevents "the API is slow" arguments that are really
+"outside design bounds."
+
+| Dimension | v1 Target | Notes |
+|-----------|-----------|-------|
+| Target concurrent requests | 50 | Single Uvicorn worker, async. Sufficient for ≤30 customers. |
+| Hot cache p95 latency | < 50ms | Signal cache hit path — Python dict lookup + JSON serialization |
+| Cold cache p95 latency | < 5s | DuckDB Gold query fallback on cache miss (startup only) |
+| Memory budget (FastAPI worker) | 512 MB | Signal cache ~250 KB + DuckDB in-process + Python overhead |
+| Max response size | 2 MB | Full universe signal snapshot (~121 instruments × ~2 KB each) |
+| Cache warm-start failure | Serve 503 on `/healthz/ready` until cache populated; Docker health check prevents traffic routing | Container never receives traffic with empty cache |
+| Scale trigger | Migrate to multi-worker Uvicorn + Redis cache when concurrent requests > 50 sustained or p95 > 200ms | — |
+
+### Signal Operational States
+
+When source failures cascade beyond staleness into systemic impairment, the serving
+layer needs defined operational modes — not ad-hoc decisions under pressure.
+
+| State | Condition | Behavior | API Response | Customer Notice |
+|-------|-----------|----------|--------------|-----------------|
+| **Healthy** | All sources fresh, signal compute current | Normal operation | Standard responses | None |
+| **Degraded** | 1+ sources stale, signal still computable | Recompute with available data, flag staleness | `staleness_flag: true` + `stale_sources[]` on affected instruments | SLA 3 notification (60 min) |
+| **Impaired** | ≥50% of contributing sources stale for a single instrument, OR signal compute pipeline failed | Freeze last good snapshot for affected instruments | Frozen snapshot served with `is_stale: true` + `signal_state: "frozen"` + `frozen_reason` | SLA 3 + explicit "impaired" status page update |
+| **Suppressed** | Operator decision: data quality unacceptable for serving | Suppress affected fields/instruments entirely | `signal_state: "suppressed"` + `null` values on affected fields | Email to affected customers within 30 min |
+
+**Transition rules:**
+- Healthy → Degraded: automatic (source freshness monitor)
+- Degraded → Impaired: automatic (threshold breach) or manual (operator)
+- Any → Suppressed: manual only (operator decision via admin endpoint)
+- Suppressed → Healthy: manual only (operator restores after verification)
+- Frozen snapshots expire after 24h — after that, transition to Suppressed
+
+**Rationale:** "Honestly stale but frozen" is sometimes safer than "freshly
+recomputed from half a market." The frozen state preserves the last coherent signal
+while making staleness explicit. Suppression is the nuclear option — used when
+serving would be actively misleading.
 
 ### DuckDB Concurrency Model
 
@@ -3323,11 +3415,22 @@ Notification includes: which source is stale, which instruments are affected,
 estimated resolution timeline if known.
 
 **SLA 4 — Methodology Change Notice:** Minimum 14-day advance notice before any
-change to signal methodology that affects interpretation of outputs. Scope: model
-retraining that changes output distributions, pillar weight adjustments, regime
-classification changes. Does NOT cover: bug fixes that correct erroneous outputs,
-source replacements that do not change the metric being measured. Breach: methodology
+change to signal methodology that affects interpretation of outputs. Breach: methodology
 change deployed without 14-day advance customer notice.
+
+**Methodology Change Classes:**
+
+| Class | Description | Notice | PIT Impact | Examples |
+|-------|-------------|--------|------------|----------|
+| A — Cosmetic | Wording, formatting, documentation-only changes | None | None — no output change | Typo fix in methodology doc, clarified pillar description |
+| B — Non-breaking refinement | Output-preserving improvements | 7-day changelog entry | None — historical comparability preserved | Source replacement (same metric), bug fix correcting erroneous output, cadence change |
+| C — Output distribution shift | Changes that affect backtest comparability | 14-day advance notice (SLA 4) | Backtest discontinuity — methodology version boundary | Pillar weight adjustment, regime classification change, model retrain with new feature set, confidence scoring recalibration |
+| D — Schema-breaking | Endpoint or response schema changes | 60-day deprecation (API versioning policy) | New API version required | Field rename, field removal, endpoint restructure |
+
+Class C is the primary SLA 4 trigger. Class D triggers the API versioning policy
+(`/v1/` → `/v2/`). Classes A and B do not trigger SLA 4 but are logged in the
+methodology changelog for auditability. Customers reviewing PIT-correct historical
+data can identify methodology version boundaries from Class C entries.
 
 ### Methodology Documentation
 
@@ -3351,16 +3454,16 @@ signal computation · regime classification logic changes.
 
 ### First Customer Onboarding (Complete Sequence)
 
-**Profile A (Pro tier — self-serve or light-touch):**
+**Profile A (Signal API tier — self-serve or light-touch):**
 
 1. Discovery via published content (PIT post, methodology doc, GitHub schema, or
    48h-delayed public preview on `fromthebridge.net`)
 2. Customer visits pricing page, reviews methodology doc URL and `GET /v1/instruments`
-3. Direct pricing conversation. Pro: $199/month or $1,990/year, paid upfront. No free
-   trials. No discounts for testimonials or referrals.
+3. Direct pricing conversation. Signal API: $199/month or $1,990/year, paid upfront.
+   No free trials. No discounts for testimonials or referrals.
 4. Written agreement (structured email sufficient in v1). Covers: deliverables, SLAs,
-   redistribution restrictions.
-5. API key issued manually (Pro tier). Webhook secret provisioned separately if
+   redistribution restrictions, module access.
+5. API key issued manually (Signal API tier). Webhook secret provisioned separately if
    requested. Key delivered via 1Password secure share.
 6. Onboarding note: base URL, auth, recommended first queries, how to read confidence
    tiers and null states, how to check staleness, support contact, methodology URL,
@@ -3372,16 +3475,26 @@ signal computation · regime classification logic changes.
 9. Ongoing: methodology change notices per SLA 4, staleness notifications per SLA 3,
    monthly manual invoicing (net 7 payment terms).
 
-**Profile B (Protocol tier — relationship-driven):**
+**Profile B (Ecosystem Monitor tier — relationship-driven):**
 
 1. Warm intro or direct outreach after ≥3 Profile A subscribers + 60-day live history
 2. v0 ecosystem report shared: "I produced a draft report using our systematic signal
    framework. I would like your feedback on whether this is useful. No ask attached."
 3. Follow-up with revised report if feedback received. Introduce founding pricing ($4,500).
 4. Written agreement. Payment: 50% on engagement, 50% on delivery.
-5. API key issued (Protocol tier). Scoped instrument access per coverage agreement.
+5. API key issued (Ecosystem Monitor tier). Scoped instrument access per coverage
+   agreement (instrument coverage set).
 
-**Institutional:** Sales-only. Phase 6. Qualifies on: API volume >2k calls/day,
+**Profile C (Risk Feed tier — relationship-driven):**
+
+1. Direct outreach to exchanges, market makers, prop desks after Liquidation Risk
+   Monitor is live (Phase 5+).
+2. Demo: real-time BLC-01 liquidation data + Derivatives Intelligence Feed.
+3. Custom pricing based on instrument coverage set.
+4. Written agreement. Annual contract, direct sales.
+5. API key issued (Risk Feed tier). Custom instrument coverage per agreement.
+
+**Intelligence Suite:** Sales-only. Phase 6. Qualifies on: API volume >2k calls/day,
 redistribution rights required, or bespoke coverage request.
 
 ### Decisions Locked
@@ -3391,10 +3504,11 @@ redistribution rights required, or bespoke coverage request.
 | v1 delivery model | API-first. No dashboard. |
 | v1 customer | Savvy retail, technical lean, broad coverage interest |
 | "Institutional grade" | Internal quality bar only |
-| Tier model | 4-tier: Free / Pro / Protocol / Institutional (D2) |
-| Free tier endpoints | `GET /v1/market/prices`, `GET /v1/macro`, `GET /v1/instruments`, `GET /v1/health` |
-| Pro+ tier endpoints | `GET /v1/signals`, `GET /v1/signals/{id}`, `GET /v1/signals/performance`, `GET /v1/regime` |
-| Institutional-only | `GET /v1/features/{id}`, provenance trace, window=all |
+| Tier model | 5-tier hybrid: Preview / Signal API / Intelligence Suite / Risk Feed / Ecosystem Monitor. Tiers set access + contract; modules set entitlement scope. |
+| Preview tier endpoints | `GET /v1/market/prices`, `GET /v1/macro`, `GET /v1/instruments`, `GET /v1/health` |
+| Signal API+ endpoints | `GET /v1/signals`, `GET /v1/signals/{id}`, `GET /v1/signals/performance`, `GET /v1/regime` |
+| Intelligence Suite-only | `GET /v1/features/{id}`, provenance trace, window=all |
+| Risk Feed-only | `GET /v1/liquidations` (BLC-01), custom instrument coverage |
 | Redistribution gating | Three-state enum. Direct-lineage-only propagation. 12-step middleware enforcement. |
 | Authentication | Manual key issuance. API key required on all tiers. No self-serve. |
 | Social distribution | Telegram + X. Funnel only — not customer delivery. |
@@ -3409,7 +3523,7 @@ redistribution rights required, or bespoke coverage request.
 | Neutral threshold | Fixed ±0.10. Noise floor at 2/5 pillars. Not configurable per-request. |
 | Sharpe convention | Population std, no Bessel correction. Large N. |
 | Cross-sectional method | Equal-weight. <30 resolved signals excluded entirely. |
-| Reliability diagram | 10 fixed bins. Request-time DuckDB. Institutional tier only. |
+| Reliability diagram | 10 fixed bins. Request-time DuckDB. Intelligence Suite tier only. |
 | v2 triggers | Both conditions required: API conversion friction AND social inbound UI-blocked |
 
 
@@ -3588,7 +3702,7 @@ window edge cases.
 | Pillar count | 2 live pillars scoring (trend_structure, liquidity_flow); 3 planned pillars (valuation, structural_risk, tactical_macro) producing null states with documented reason codes |
 | Regime at emission | Regime classification stored at emission time in `marts.signals_history.regime`; not recomputed at query time |
 | Neutral threshold | ±0.10 threshold verified: signals within range classified as neutral; downstream performance metrics (hit_rate, Sharpe) computed correctly with neutral exclusion |
-| DG-R1 recorded | Redistribution impact decision (Option A/B/C) recorded with rationale and date in §Redistribution Enforcement before Phase 3 gate passes |
+| DG-R1 recorded | ✅ Resolved: Option B — parallel ToS audit during Phase 4 shadow. Coinalyze/BGeometrics/Etherscan/BLC-01 audits during shadow period. SoSoValue/CoinMetrics remain `blocked`. ETF flow fields null-flagged at Phase 5 launch if unresolved. See §Redistribution Enforcement. |
 
 **Timeline estimate:** 1–2 weeks.
 
@@ -3643,8 +3757,9 @@ Track A — Entitlement DDL + Seeding:
 1. Deploy `db/migrations/entitlement/0001_entitlement_schema.sql` (12 tables)
 2. Bootstrap `audit_access_log` partitions: create current + next month partitions
    via psql before starting FastAPI (prevents partition routing error on first request)
-3. Seed plan data: Free/Pro/Protocol/Institutional + rate limits + endpoint access +
-   field access + lookback config + instrument access
+3. Seed plan data: Preview/Signal API/Intelligence Suite/Risk Feed/Ecosystem Monitor +
+   module access matrix + rate limits + endpoint access + field access + lookback config
+   + instrument coverage sets
 
 Track B — Dagster Assets:
 3. `forge_redistribution_refresh` asset (source_catalog → metric_lineage → blocked set)
@@ -3702,10 +3817,10 @@ Track F — Signal Snapshot Cache (C3):
 | Delivery | Webhook verified against test endpoints |
 | Staleness flag | Simulated source failure triggers flag within 2 collection cycles |
 | Latency SLAs | All endpoints meet p95 targets under representative load |
-| T0-1 Coinalyze hard block | Pro key: `liquidity_flow` + `derivatives_pressure` absent; `_redistribution_notice` present; HTTP 200 |
-| T0-2 No over-suppression | Same Pro key: `trend_structure` + `valuation` present and populated |
+| T0-1 Coinalyze hard block | Signal API key: `liquidity_flow` + `derivatives_pressure` absent; `_redistribution_notice` present; HTTP 200 |
+| T0-2 No over-suppression | Same Signal API key: `trend_structure` + `valuation` present and populated |
 | T0-3 Revoked key | Returns 401; cache invalidation ≤60s TTL |
-| T0-4 Free tier block | Free key → `/v1/signals` → 403 `endpoint_not_permitted` |
+| T0-4 Preview tier block | Preview key → `/v1/signals` → 403 `endpoint_not_permitted` |
 | Entitlement DDL | All 12 entitlement tables deployed, seed data loaded |
 | Entitlement middleware | 12-step chain operational, LRU cache functional |
 | Concurrent limit | `asyncio.Semaphore` enforced; distinct 429 from rate limit |
@@ -3719,21 +3834,21 @@ Track F — Signal Snapshot Cache (C3):
 | B3 `performance_metrics` | All standard `(track, horizon, window)` combinations materialised; row count within expected range (~7,380) |
 | B3 null contract | Window with < 30 resolved signals returns metric objects with null values and `min_observations_met: false` — no absent keys |
 | B3 cross-sectional | `instruments_excluded_insufficient_history` count correct; excluded instruments contribute no zeros |
-| B3 entitlement tiers | All 4 tiers verified against B3 field-tier mapping: Free=403, Pro=365d cap, Protocol=+pillar scoped, Institutional=+reliability+all |
+| B3 entitlement tiers | All 5 tiers verified against B3 field-tier mapping: Preview=403, Signal API=365d cap, Ecosystem Monitor=+pillar scoped, Intelligence Suite=+reliability+all, Risk Feed=+BLC-01 |
 | B3 reliability diagram | Request-time DuckDB grouped aggregation on `signal_outcomes` returns 10-bin reliability data in < 50ms |
 | B3 latency SLA | `GET /v1/signals/performance` p95 ≤ 500ms under representative load |
 | C3 cache warm start | FastAPI reads `gold/snapshots/latest.json` from MinIO on startup; `cache.ready=True` within 5s |
 | C3 readiness gate | `/healthz/ready` returns 503 until cache warm; Docker health check prevents premature traffic |
 | C3 redistribution isolation | Option C verified: gated field values (SoSoValue, CoinMetrics) never present in `app.state` cache object |
-| C3 tier filtering | Per-request tier filter produces correct field sets for all 4 tiers against Thread 7 field-level gates |
+| C3 tier filtering | Per-request tier filter produces correct field sets for all 5 tiers against Thread 7 field-level gates |
 | C3 staleness behavior | Cache age > 9h → `is_stale=True` in response; no HTTP error; `next_computation_estimated=null` |
 | C3 latency SLA | `GET /v1/signals` full universe p95 < 50ms (cache hit) |
 | C3 cache refresh | `signal_snapshot_writer` → `/internal/cache/refresh` → atomic swap verified; no stale window during normal cycle |
 | C3 response envelope | All `/v1/signals` responses include freshness fields (`snapshot_computed_at`, `cache_age_seconds`, `is_stale`, `cache_miss`) |
 | C3 Dagster asset wired | `signal_snapshot_writer` asset in Dagster repository; dependency on signal compute assets |
 | C3 monitoring | Prometheus metrics: `signal_cache_computed_at_epoch`, `signal_cache_refresh_failure_total`, cache miss rate |
-| F1 first API key | First external API key issued to a paying customer (Pro tier) |
-| F1 pricing page | Pricing page live at `fromthebridge.net` with Pro/Protocol/Institutional tiers |
+| F1 first API key | First external API key issued to a paying customer (Signal API tier) |
+| F1 pricing page | Pricing page live at `fromthebridge.net` with Signal API/Intelligence Suite/Risk Feed/Ecosystem Monitor tiers |
 | F1 API docs | API documentation live and publicly accessible |
 | F1 performance summary | Performance summary page live (linked from pricing page) |
 | F1 methodology doc | Methodology document published at `fromthebridge.net/methodology` |
@@ -3765,7 +3880,7 @@ Track F — Signal Snapshot Cache (C3):
 | D1 secrets runbook | `secrets/` directory structure and `init_secrets.sh` documented in CLAUDE.md runbook |
 | D1 isolation verified | ClickHouse credential isolation + MinIO service account scoping confirmed in production |
 | Public status page | Exists, manually updatable |
-| First customer delivery | First paying customer (Pro tier) has received API key, confirmed successful API call, and acknowledged data receipt |
+| First customer delivery | First paying customer (Signal API tier) has received API key, confirmed successful API call, and acknowledged data receipt |
 
 **Timeline estimate:** 1–2 weeks.
 
@@ -3809,8 +3924,8 @@ There is no parallel operation. Forge is dead. Forge database retained read-only
 | Parallel operation | None. Forge read-only 90 days. |
 | ML shadow period | Minimum 30 days. Extension if shadow evaluation fails. |
 | Layer 2 synthesis | Designed and locked (§L2.1–L2.8). Implementation in Phase 5. |
-| First customer | Phase 6 completion. Direct engagement. Real pricing. No free trials. |
-| ToS audit timing | Phase 6, before any external data product ships. |
+| First customer | Signal API tier after Phase 5 gate. Direct engagement. Real pricing. No free trials. |
+| ToS audit timing | Coinalyze/BGeometrics/Etherscan/BLC-01: parallel during Phase 4 shadow (DG-R1 Option B). SoSoValue/CoinMetrics: Phase 6. |
 | Schema defects | Fixed before Phase 1 begins. No schema changes after Phase 0 gate. |
 | Security posture (D1) | File-based secrets (`secrets/` bind mounts, chmod 600). ClickHouse credential isolation (`ch_writer` INSERT-only, `ch_export_reader` SELECT-only). MinIO per-bucket service accounts. Customer API keys: argon2id hashed, 1Password delivery. Annual rotation March. 4 incident playbooks. Phase 0 corrective: SEC-01 through SEC-06. |
 
@@ -4164,7 +4279,8 @@ extended with `forge` schema for catalog tables. No time series data — ever.
 `customers`, `api_keys`, `plans`, `rate_limit_policies`, `subscriptions`,
 `plan_endpoint_access`, `plan_field_access`, `plan_lookback_config`,
 `plan_instrument_access`. Plus 3 supporting tables: `customer_instrument_overrides`
-(Protocol tier scoping), `metric_redistribution_tags` (pre-computed redistribution
+(Ecosystem Monitor + Risk Feed tier scoping via instrument coverage set),
+`metric_redistribution_tags` (pre-computed redistribution
 state per metric, refreshed by PostgreSQL trigger + Dagster nightly; see
 §Redistribution Enforcement), `audit_access_log` (partitioned, monthly, 90d hot +
 7-year MinIO archive). Total: 12 new tables in `forge` schema.
@@ -4187,7 +4303,7 @@ CREATE TABLE forge.audit_access_log (
     status          SMALLINT NOT NULL,            -- HTTP status code
     latency_ms      INTEGER NOT NULL,
     logged_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    tier            TEXT NOT NULL,                -- 'free','pro','protocol','institutional','internal'
+    tier            TEXT NOT NULL,                -- 'preview','signal_api','intelligence_suite','risk_feed','ecosystem_monitor','internal'
     denial_reason   TEXT,                         -- 'rate_limit_exceeded','concurrent_limit','endpoint_not_permitted', NULL if 2xx
     redistribution_events JSONB,                  -- array of {metric_id, source_id, action, field}
                                                   -- action: 'redistribution_filtered' | 'pending_flagged'
@@ -4228,8 +4344,8 @@ CREATE TABLE forge.plan_field_access (
 );
 -- Seed data derived from B3 field-tier mapping table (§Field-Tier Mapping).
 -- Each row maps a plan to a response field path and its access level.
--- 'scoped' scope on Protocol tier pillar_attribution means: only pillars
--- relevant to the customer's covered instruments are returned.
+-- 'scoped' scope on Ecosystem Monitor tier pillar_attribution means: only pillars
+-- relevant to the customer's instrument coverage set are returned.
 ```
 
 **Disqualified:** SQLite (no concurrent writes) · ClickHouse (no foreign key
@@ -4368,6 +4484,20 @@ Data loss risk: None for source data.
 **Scope:** Single-host deployment on proxmox (192.168.68.11). All services run on one
 machine. A full host failure is the worst-case scenario.
 
+#### DR Service Classes
+
+| Class | Audience | RPO | RTO | Failover | v1 Posture |
+|-------|----------|-----|-----|----------|------------|
+| Internal (build-time) | Stephen / development | 24h | 4h | Manual | Current — manual recovery, NAS backups, no redundancy |
+| Signal API (paid) | Signal API subscribers | 24h | 2h | Manual + priority response | Same infrastructure, faster manual response. SLA 2 (99.5% uptime) is the customer commitment. |
+| Intelligence Suite (future) | Intelligence Suite subscribers | 4h | 1h | Warm standby | Not in v1. Trigger: first Intelligence Suite contract. Requires PostgreSQL replication + MinIO cross-region. |
+
+**v1 is Class 1 only.** The honest posture is "manual recovery, single host, no
+automatic failover." This is acceptable for early-stage with ≤30 customers and
+transparent SLA commitments. Class 2 differentiation is response priority, not
+infrastructure redundancy. Class 3 requires infrastructure investment triggered by
+contract requirements.
+
 #### Recovery Targets
 
 | Component | RPO (max data loss) | RTO (max downtime) | Backup location |
@@ -4502,9 +4632,9 @@ The design is correctly implemented when:
 | Silver → Gold export cadence (6h) | **Resolved.** Hybrid event-triggered sensor + 1-hour fallback. Worst-case 44min. See §Silver→Gold Export. | — |
 | Redistribution enforcement design | **Resolved (A2).** Three-state enum, Option C propagation, `metric_redistribution_tags`, null-with-flag response, 5 audit evidence queries. See §Redistribution Enforcement. | — |
 | CoinMetrics redistribution | `blocked` (internal-only ToS). Propagates to derived outputs until `propagate_restriction` relaxed. | Phase 6 ToS audit |
-| SoSoValue redistribution | `blocked` (non-commercial ToS). Propagates to Capital Flow Direction ML model. | Phase 6 ToS audit or paid tier |
-| Coinalyze / BGeometrics / Etherscan / BLC-01 redistribution | `pending` (unaudited). Propagates to derived outputs at default settings. | Phase 6 ToS audit |
-| BLC-01 ToS audit | Unaudited — internal only | Phase 6 ToS audit |
+| SoSoValue redistribution | `blocked` (non-commercial ToS). Propagates to Capital Flow Direction ML model. ETF flow fields conditionally null-flagged at Phase 5 launch (DG-R1). | Phase 6 ToS audit or paid tier |
+| Coinalyze / BGeometrics / Etherscan / BLC-01 redistribution | `pending` (unaudited). Propagates to derived outputs at default settings. | Phase 4 shadow ToS audit (DG-R1 Option B) |
+| BLC-01 ToS audit | Unaudited — internal only | Phase 4 shadow ToS audit (DG-R1 Option B) |
 | Index/benchmark licensing | Deferred to v2 | Methodology documented + ToS audited |
 | ML H2 regime engine (Volatility-Liquidity Anchor) | Rule-based baseline in production | H2 target, after UNI-01 unblocked |
 | PBOC balance sheet via FRED | BOJ confirmed in FRED (boj_total_assets). PBOC: evaluate during FRG-10 build. | During FRG-10 / Phase 1 FRED expansion |
@@ -4554,13 +4684,14 @@ All decisions from all threads in one place.
 | Content originality | Quantitative, systematic, auditable — not qualitative |
 | Asset coverage | Domain-driven, not ticker-driven |
 | MVP | Signal product, institutional early access, manual invoicing |
-| Pro pricing | $199/month · $1,990/year. Manual invoicing. (F1) |
-| Protocol pricing | $2,500–$5,000/month API tier. Consulting (Stream 3) separate. (F1) |
-| Institutional pricing | $2,500/month. Sales-only. Phase 6. (F1) |
+| Signal API pricing | $199/month · $1,990/year. Manual invoicing. (F1) |
+| Ecosystem Monitor pricing | $2,500–$5,000/month API tier. Consulting (Stream 3) separate. (F1) |
+| Intelligence Suite pricing | $2,500/month. Sales-only. Phase 6. (F1) |
+| Risk Feed pricing | Custom. Annual contract, direct sales. (F1) |
 | Profile A acquisition | Content pull. PIT post + methodology doc + GitHub schema. (F1) |
 | Profile B acquisition | Direct outreach after ≥3 Profile A + 60d history. (F1) |
 | Public preview | 48h-delayed top-10 composite on website. Shadow week 2. (F1) |
-| Pro tier opens | After Phase 5 gate. (F1) |
+| Signal API tier opens | After Phase 5 gate. (F1) |
 | Stripe | Deferred. Trigger: 20+ active subscribers. (F1) |
 | Index licensing | v2 — deferred |
 | Dashboard | v2 — both trigger conditions required |
@@ -4628,14 +4759,14 @@ All decisions from all threads in one place.
 |---|---|
 | v1 delivery | API-first. No dashboard. |
 | Authentication | Manual key issuance. API key required on all tiers (including Free). |
-| Tier model | 4-tier: Free / Pro / Protocol / Institutional (D2 — supersedes Free/Paid binary) |
+| Tier model | 5-tier hybrid: Preview / Signal API / Intelligence Suite / Risk Feed / Ecosystem Monitor. Tiers set access + contract; modules set entitlement scope. |
 | Entitlement enforcement | 12-step middleware chain. In-process LRU cache. Async audit log. |
 | Redistribution gating | Three-state enum (allowed/pending/blocked). Direct-lineage-only propagation. |
 | API versioning | Path-level (/v1/). Breaking changes require /v2/. |
 | Webhook | At-least-once delivery, HMAC-signed |
 | SLA count | Four: signal freshness (90min), API uptime (99.5%), staleness notification (60min), methodology change (14d) |
 | Methodology doc | Public URL, versioned, 8 sections |
-| First customer | Pro tier after Phase 5 gate. Direct engagement. Written agreement. Manual invoicing. |
+| First customer | Signal API tier after Phase 5 gate. Direct engagement. Written agreement. Manual invoicing. |
 | Performance endpoint | `GET /v1/signals/performance`. Pre-materialised marts (B3). p95 ≤ 500ms. PIT-first. |
 | Performance PIT rules | Anchor: `observed_at > computed_at`. Backfill guard: `ingested_at_signal <= outcome_observed_at`. Fixed, non-negotiable. |
 | Neutral threshold | Fixed ±0.10. Not configurable per-request. Documented in methodology. |
@@ -4676,7 +4807,7 @@ All decisions from all threads in one place.
 | Migration order | Tiingo first (spot price dependency), then remaining |
 | Parallel operation | None. Forge read-only 90 days. |
 | ML shadow period | Minimum 30 days |
-| ToS audit | Phase 6, before any external data product ships |
+| ToS audit | Coinalyze/BGeometrics/Etherscan/BLC-01: Phase 4 shadow (DG-R1 Option B). SoSoValue/CoinMetrics: Phase 6. |
 
 ---
 
