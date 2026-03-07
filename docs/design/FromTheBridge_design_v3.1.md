@@ -241,7 +241,7 @@ they are.
 | Pro | Signal API | Individual traders, quant researchers, small funds | Monthly or annual, self-serve | $199/month · $1,990/year |
 | Institutional | Intelligence Suite | Asset managers, crypto hedge funds, family offices | Annual, direct sales | $2,500/month |
 | Exchange | Risk Feed | Exchanges, market makers, prop desks | Annual, direct sales | Custom |
-| Protocol | Ecosystem Monitor | Foundations, DAOs, protocol treasuries | Annual, direct sales or addendum on Institutional | $2,500–$5,000/month |
+| Protocol | Ecosystem Monitor | Foundations, DAOs, protocol treasuries | Annual, direct sales or addendum on Intelligence Suite | $2,500–$5,000/month |
 
 **Preview tier:** 48h-delayed composite top-10 on website only. No account. No API.
 
@@ -2799,15 +2799,13 @@ Flow Direction model (SoSoValue), ML Derivatives Pressure model (Coinalyze), and
 composite score (severely degraded). Option B resolves the `pending` sources; the
 `blocked` sources (SoSoValue/CoinMetrics) produce documented null-flagged fields.
 
-#### Open Assumptions (Require Architect Confirmation Before Phase 3/5)
+#### Remaining Open Assumptions
 
-1. ~~**Propagation rule:**~~ **Escalated to DG-R1 above.** Option C with `propagate_restriction = true` default — confirm acceptable product degradation for derivatives pillar at launch
-2. ~~**SoSoValue/CoinMetrics propagation:**~~ **Escalated to DG-R1 above.** Both default `true`. Confirm whether signal outputs are sufficiently transformed to be redistribution-free
 3. **ML/EDSx registration:** All model outputs and pillar scores must be registered as synthetic `metric_id` entries in `metric_catalog` + `metric_lineage` (Phase 3/4 deliverable)
-4. ~~**Audit log schema:**~~ **Resolved.** `audit_access_log` DDL defined in §Database Layer with `redistribution_events JSONB` as `[{metric_id, source_id, action, field}]`. A2 queries verified compatible.
-5. **Pending in customer docs:** Confirm whether pending status should appear in `GET /v1/instruments` catalog response
-6. ~~**Composite degradation:**~~ **Escalated to DG-R1 above.** Confirm degraded `final_score` acceptable when one ML model blocked (vs. requiring all 5 models)
-7. **Cache reload latency:** ≤60 seconds acceptable for source_catalog changes to propagate to live API
+5. **Pending in customer docs:** Confirm whether pending status should appear in `GET /v1/instruments` catalog response (before Phase 5)
+7. **Cache reload latency:** ≤60 seconds acceptable for source_catalog changes to propagate to live API (before Phase 5)
+
+*Items 1, 2, 6 resolved via DG-R1 (Option B). Item 4 resolved — `audit_access_log` DDL defined in §Database Layer.*
 
 ---
 
@@ -2902,7 +2900,7 @@ machine-readable track record before committing.
 | `to` | ISO 8601 | timestamp | null | Defaults to latest resolved outcome date |
 
 Authentication: API key required. Preview tier returns HTTP 403. Signal API tier: window capped
-at 365 days. Institutional: all values permitted. `from`/`to` and `window` are mutually
+at 365 days. Intelligence Suite: all values permitted. `from`/`to` and `window` are mutually
 exclusive. If both supplied, `from`/`to` takes precedence and `window` is ignored; an
 explicit `parameter_override_warning` field is returned.
 
@@ -2946,7 +2944,7 @@ combinations. No pagination required.
 - **`return_attribution`** — quintile returns, Sharpe, max drawdown, benchmark comparison
 - **`calibration`** — ECE, Brier score, reliability diagram (ML/composite only)
 - **`regime_conditional`** — per-regime hit rates and Sharpe
-- **`pillar_attribution`** — per-pillar hit rates (Institutional only)
+- **`pillar_attribution`** — per-pillar hit rates (Intelligence Suite + Ecosystem Monitor scoped)
 - **`null_states_summary`** — breakdown of null event causes
 - **`entitlement`** — tier and `fields_redacted` array
 
@@ -4773,8 +4771,8 @@ All decisions from all threads in one place.
 | Sharpe convention | Population std (no Bessel). Locked before methodology doc written. |
 | Return definition | Daily close (Tiingo). Calendar days. VWAP rejected. |
 | Cross-sectional aggregation | Equal-weight. <30 resolved signals = excluded (no zero contribution). |
-| Reliability diagram | 10 fixed bins, request-time DuckDB. Institutional only. |
-| Performance window=all | Institutional only. Forward-looking restriction. |
+| Reliability diagram | 10 fixed bins, request-time DuckDB. Intelligence Suite tier only. |
+| Performance window=all | Intelligence Suite tier only. Forward-looking restriction. |
 | Pillar attribution partial | Partial response acceptable (2/5 pillars at Phase 5). `planned_pillars_note` for inactive. |
 | v2 triggers | Both: API conversion friction measurable AND social inbound UI-blocked |
 
