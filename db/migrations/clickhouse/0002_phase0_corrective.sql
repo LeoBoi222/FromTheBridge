@@ -104,9 +104,7 @@ CREATE SETTINGS PROFILE IF NOT EXISTS ch_ops_reader_profile
 -- ---------------------------------------------------------------------------
 -- 8. CREATE users with profiles
 -- ---------------------------------------------------------------------------
--- Passwords are placeholders — must be replaced with secrets from
--- secrets/ch_writer.txt, secrets/ch_export_reader.txt, secrets/ch_ops_reader.txt
--- before production deployment.
+-- Passwords sourced from secrets/ch_*.txt
 
 CREATE USER IF NOT EXISTS ch_writer
     IDENTIFIED BY 'gYyDIi/0gsToRUJf1n0qQlO0MCJxEGlS1i1C/FiG2Eg='
@@ -149,11 +147,12 @@ GRANT SELECT ON forge.current_values TO ch_ops_reader;
 GRANT ALL ON forge.* TO ch_admin;
 
 -- ---------------------------------------------------------------------------
--- 10. Suspend default user access to forge database
+-- 10. Default user access restriction
 -- ---------------------------------------------------------------------------
--- The default user should not have access to forge tables.
--- This prevents accidental queries from unsecured clients.
-REVOKE ALL ON forge.* FROM default;
+-- The default user is managed by users.xml (read-only storage) and cannot
+-- be modified via SQL REVOKE. Restrict default user access by configuring
+-- <allow_databases> in docker/clickhouse/users.xml instead.
+-- REVOKE ALL ON forge.* FROM default;  -- NOT SUPPORTED for XML-managed users
 
 -- ---------------------------------------------------------------------------
 -- 11. Verification queries (run after migration)
