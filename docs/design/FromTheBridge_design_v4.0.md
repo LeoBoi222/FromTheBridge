@@ -114,7 +114,7 @@ Layer 5: Gold
   Analytical Layer. Iceberg tables on MinIO.
   DuckDB reads here. Feature compute reads here ONLY.
   Never reads ClickHouse directly — hard rule.
-  Populated by event-triggered Silver → Gold export (multi_asset_sensor)
+  Populated by event-triggered Silver → Gold export (AutomationCondition)
   with 1-hour fallback schedule. See §Silver→Gold Export.
 
 Layer 4: Silver
@@ -246,7 +246,7 @@ Only Dagster assets read the `forge` database in ClickHouse. No application serv
 
 - `ch_export_reader` — Silver → Gold export asset. SELECT on `forge.observations`,
   `forge.dead_letter`, `forge.current_values`. The export fires on two triggers:
-  (1) `multi_asset_sensor` polling collection asset keys at 30s intervals, and
+  (1) `AutomationCondition` on collection asset keys (event-driven), and
   (2) `@hourly` fallback schedule as a safety net.
 - `ch_ops_reader` — Dagster health monitoring assets (`ftb_ops.*`, `shared_ops.*`).
   SELECT on `forge.observations` metadata (counts, freshness) only.
@@ -1498,9 +1498,9 @@ the float.
 | ETF net flow | `etf.flows.net_flow_usd` | value | 1 period |
 | ETF flow cumulative | `etf.flows.net_flow_usd` | cumsum | 7d |
 | ETF flow cumulative | `etf.flows.net_flow_usd` | cumsum | 30d |
-| On-chain transfer vol | `flows.onchain.transfer_volume_usd` | value | 1 period |
-| On-chain transfer MA | `flows.onchain.transfer_volume_usd` | ma | 7d |
-| On-chain transfer zscore | `flows.onchain.transfer_volume_usd` | zscore | 30d |
+| On-chain transfer vol | `chain.activity.transfer_volume_usd` | value | 1 period |
+| On-chain transfer MA | `chain.activity.transfer_volume_usd` | ma | 7d |
+| On-chain transfer zscore | `chain.activity.transfer_volume_usd` | zscore | 30d |
 
 **DeFi health features (market-level, 1d cadence):**
 
@@ -1807,6 +1807,7 @@ CREATE TABLE metric_catalog (
     status              TEXT            NOT NULL DEFAULT 'active',
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT now(),
     deprecated_at       TIMESTAMPTZ,
+    backfill_depth_days INTEGER,              -- Phase 1: target historical depth per metric
 
     CONSTRAINT metrics_domain_valid
         CHECK (domain IN ('derivatives','spot','flows','defi','macro','etf',
@@ -1995,8 +1996,10 @@ CREATE TABLE forge.observations
     data_version        UInt64          NOT NULL    -- Revision counter
 )
 ENGINE = ReplacingMergeTree(data_version)
-ORDER BY (metric_id, instrument_id, observed_at)
+ORDER BY (metric_id, ifNull(instrument_id, ''), observed_at)
 PARTITION BY toYYYYMM(observed_at);
+-- Note: ClickHouse forbids Nullable columns in ORDER BY. ifNull wraps the sort
+-- key while preserving NULL storage in the column itself.
 ```
 
 **`instrument_id` is nullable.** Market-level metrics (macro, DeFi aggregate,
@@ -2034,7 +2037,7 @@ any other service (Rule 2 still applies — only the export asset reads ClickHou
 ```sql
 CREATE MATERIALIZED VIEW forge.current_values
 ENGINE = AggregatingMergeTree()
-ORDER BY (metric_id, instrument_id)
+ORDER BY (metric_id, ifNull(instrument_id, ''))
 AS SELECT
     metric_id,
     instrument_id,
@@ -2073,42 +2076,101 @@ LIMIT 1;
 
 ### Metric Catalog Seed Data
 
-**Authoritative counts:** Phase 0 seed = 74 metrics (per `0001_catalog_schema.sql`
-verification comment: Derivatives 9, Exchange Flow 8, ETF 5, Stablecoin 4, DeFi 11,
-On-Chain 6, Macro 23, Price/Volume 4, Metadata 4). Phase 1 additions = 9 metrics
-(2 DeFi protocol + 4 CFTC COT + 2 derived + 1 NVT proxy). Total at Phase 1
-completion = 83 metrics across 9 domains. FRED Q4 series (BREAKEVEN, REAL_YIELD)
-are already counted in the 18-series expansion within the 74 Phase 0 seed.
+**Authoritative specification.** The table below IS the Phase 0 seed — 74 metrics
+across 9 domains. The corrective migration (`0004_phase0_corrective.sql`) implements
+this table character-for-character. Phase 1 additions = 9 metrics (2 DeFi protocol +
+4 CFTC COT + 2 derived + 1 NVT proxy). Total at Phase 1 completion = 83.
 
-**Derivatives domain (per instrument, 8h):**
-`derivatives.perpetual.funding_rate` · `derivatives.perpetual.open_interest_usd` ·
-`derivatives.perpetual.liquidations_long_usd` · `derivatives.perpetual.liquidations_short_usd` ·
-`derivatives.perpetual.price_usd` · `derivatives.options.delta_skew_25` ·
-`derivatives.options.iv_1w` · `derivatives.options.iv_1m`
+**Domain breakdown:** Derivatives 9, Flows 8, ETF 5, Stablecoin 4, DeFi 11,
+Chain 6, Macro 23, Price 4, Metadata 4.
 
-**Spot domain (per instrument, 1d):**
-`spot.price.close_usd` · `spot.volume.usd_24h` · `spot.market_cap.usd`
+**Renames applied (13 metrics):** `flows.stablecoin.*` → `stablecoin.*`,
+`flows.etf.*` → `etf.flows.*`, `meta.*` → `metadata.*`. Prefix now matches
+the `domain` column CHECK constraint.
 
-**Flows domain (per instrument, 1d):**
-`flows.exchange.inflow_usd` · `flows.exchange.outflow_usd` ·
-`flows.exchange.net_flow_usd` · `flows.onchain.transfer_volume_usd`
+| metric_id | domain | subdomain | description | unit | value_type | granularity | cadence | staleness_threshold | is_nullable | computation | sources | status |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| derivatives.perpetual.funding_rate | derivatives | perpetual | Perpetual Funding Rate | rate | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
+| derivatives.perpetual.open_interest_usd | derivatives | perpetual | Perpetual Open Interest (USD) | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
+| derivatives.perpetual.open_interest_change_usd | derivatives | perpetual | Perpetual OI Change (USD, derived) | usd | numeric | per_instrument | 8 hours | 16 hours | false | open_interest_usd[t] - open_interest_usd[t-1] | {coinalyze} | active |
+| derivatives.perpetual.liquidations_long_usd | derivatives | perpetual | Perpetual Liquidations Long (USD) | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
+| derivatives.perpetual.liquidations_short_usd | derivatives | perpetual | Perpetual Liquidations Short (USD) | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
+| derivatives.perpetual.perp_basis | derivatives | perpetual | Perpetual Basis (derived) | pct | numeric | per_instrument | 8 hours | 16 hours | false | (perp_price - spot_price) / spot_price | {} | active |
+| derivatives.perpetual.long_short_ratio | derivatives | perpetual | Long/Short Ratio | ratio | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
+| derivatives.perpetual.cumulative_volume_delta | derivatives | perpetual | Cumulative Volume Delta | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
+| derivatives.options.delta_skew_25 | derivatives | options | 25-Delta Skew | pct | numeric | per_instrument | 8 hours | 16 hours | true | | {} | planned |
+| derivatives.futures.expiry_proximity_days | derivatives | futures | Futures Expiry Proximity (days) | days | numeric | per_instrument | 1 day | 2 days | true | | {} | active |
+| flows.exchange.inflow_usd | flows | exchange | Exchange Inflow (USD) | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {etherscan} | active |
+| flows.exchange.outflow_usd | flows | exchange | Exchange Outflow (USD) | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {etherscan} | active |
+| flows.exchange.net_flow_usd | flows | exchange | Exchange Net Flow (USD, derived) | usd | numeric | per_instrument | 8 hours | 16 hours | false | inflow_usd - outflow_usd | {etherscan} | active |
+| flows.exchange.reserve_proxy_usd | flows | exchange | Exchange Reserve Proxy (USD) | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {etherscan} | active |
+| flows.whale.transaction_count | flows | whale | Whale Transaction Count | count | numeric | per_instrument | 8 hours | 16 hours | false | | {etherscan} | active |
+| flows.whale.net_direction | flows | whale | Whale Net Direction (derived) | ratio | numeric | per_instrument | 8 hours | 16 hours | false | (whale_inflow - whale_outflow) / whale_total | {etherscan} | active |
+| flows.exchange.spot_volume_usd | flows | exchange | Exchange Spot Volume (USD) | usd | numeric | per_instrument | 1 day | 2 days | false | | {} | active |
+| flows.exchange.btc_net_flow | flows | exchange | BTC Exchange Net Flow | usd | numeric | market_level | 1 day | 2 days | false | | {} | active |
+| etf.flows.net_flow_usd | etf | flows | ETF Net Flow (USD) | usd | numeric | per_instrument | 1 day | 2 days | false | | {sosovalue} | active |
+| etf.flows.cumulative_flow_usd | etf | flows | ETF Cumulative Flow (USD, derived) | usd | numeric | per_instrument | 1 day | 2 days | false | SUM(net_flow_usd) OVER (PARTITION BY instrument_id ORDER BY observed_at) | {sosovalue} | active |
+| stablecoin.supply.per_asset_usd | stablecoin | supply | Stablecoin Per-Asset Supply (USD) | usd | numeric | per_instrument | 12 hours | 1 day | false | | {defillama} | active |
+| stablecoin.peg.price_usd | stablecoin | peg | Stablecoin Peg Price (USD) | usd | numeric | per_instrument | 12 hours | 1 day | false | | {defillama} | active |
+| stablecoin.peg.deviation | stablecoin | peg | Stablecoin Peg Deviation (derived) | pct | numeric | per_instrument | 12 hours | 1 day | false | abs(peg_price_usd - 1.0) | {defillama} | active |
+| stablecoin.supply.total_usd | stablecoin | supply | Total Stablecoin Supply (USD) | usd | numeric | market_level | 12 hours | 1 day | false | SUM(per_asset_usd) | {defillama} | active |
+| stablecoin.supply.mint_burn_events | stablecoin | supply | Stablecoin Mint/Burn Events | count | numeric | per_instrument | 1 day | 2 days | true | | {defillama} | active |
+| defi.protocol.tvl_usd | defi | protocol | Protocol TVL (USD) | usd | numeric | per_protocol | 12 hours | 1 day | false | | {defillama} | active |
+| defi.protocol.revenue_usd | defi | protocol | Protocol Revenue (USD) | usd | numeric | per_protocol | 12 hours | 1 day | false | | {defillama} | active |
+| defi.protocol.revenue_to_tvl_ratio | defi | protocol | Protocol Revenue/TVL Ratio (derived) | ratio | numeric | per_protocol | 12 hours | 1 day | false | revenue_usd / tvl_usd | {defillama} | active |
+| defi.lending.borrow_apy | defi | lending | Lending Borrow APY | pct | numeric | per_protocol | 12 hours | 1 day | false | | {defillama} | active |
+| defi.lending.supply_apy | defi | lending | Lending Supply APY | pct | numeric | per_protocol | 12 hours | 1 day | false | | {defillama} | active |
+| defi.lending.borrow_supply_spread | defi | lending | Lending Borrow-Supply Spread (derived) | pct | numeric | per_protocol | 12 hours | 1 day | false | borrow_apy - supply_apy | {defillama} | active |
+| defi.lending.utilization_rate | defi | lending | Lending Utilization Rate (proxy) | pct | numeric | per_protocol | 12 hours | 1 day | false | | {defillama} | active |
+| defi.dex.volume_usd_24h | defi | dex | DEX Volume 24h (USD) | usd | numeric | market_level | 1 day | 2 days | false | | {defillama} | active |
+| defi.dex.volume_by_chain_usd | defi | dex | DEX Volume by Chain (USD) | usd | numeric | market_level | 1 day | 2 days | false | | {defillama} | active |
+| defi.dex.volume_to_tvl_ratio | defi | dex | DEX Volume/TVL Ratio (derived) | ratio | numeric | market_level | 1 day | 2 days | false | dex_volume_usd / aggregate_tvl_usd | {defillama} | active |
+| defi.aggregate.tvl_usd | defi | aggregate | Aggregate DeFi TVL (USD) | usd | numeric | market_level | 12 hours | 1 day | false | SUM(protocol.tvl_usd) | {defillama} | active |
+| defi.bridge.volume_usd | defi | bridge | Bridge Volume (USD, deferred) | usd | numeric | market_level | 1 day | 2 days | true | | {defillama} | planned |
+| chain.valuation.mvrv_ratio | chain | valuation | MVRV Ratio | ratio | numeric | market_level | 1 day | 2 days | false | | {bgeometrics} | active |
+| chain.valuation.sopr | chain | valuation | SOPR | ratio | numeric | market_level | 1 day | 2 days | false | | {bgeometrics} | active |
+| chain.valuation.nupl | chain | valuation | NUPL | ratio | numeric | market_level | 1 day | 2 days | false | | {bgeometrics} | active |
+| chain.valuation.puell_multiple | chain | valuation | Puell Multiple (BTC only) | ratio | numeric | market_level | 1 day | 2 days | false | | {bgeometrics} | active |
+| chain.activity.transfer_volume_usd | chain | activity | On-Chain Transfer Volume (USD) | usd | numeric | market_level | 1 day | 2 days | false | | {coinmetrics} | active |
+| chain.activity.nvt_proxy | chain | activity | NVT Proxy (derived) | ratio | numeric | market_level | 1 day | 2 days | false | market_cap / transfer_volume | {} | active |
+| macro.rates.fed_funds_effective | macro | rates | Fed Funds Effective Rate | pct | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.rates.yield_10y | macro | rates | 10-Year Treasury Yield | pct | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.rates.yield_2y | macro | rates | 2-Year Treasury Yield | pct | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.rates.yield_30y | macro | rates | 30-Year Treasury Yield | pct | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.rates.yield_spread_10y2y | macro | rates | 10Y-2Y Yield Spread | pct | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.rates.yield_spread_10y3m | macro | rates | 10Y-3M Yield Spread | pct | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.fx.dxy | macro | fx | US Dollar Index (DXY) | index | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.inflation.cpi | macro | inflation | CPI (All Urban Consumers) | index | numeric | market_level | 30 days | 54 days | false | | {fred} | active |
+| macro.inflation.core_pce | macro | inflation | Core PCE Price Index | index | numeric | market_level | 30 days | 54 days | false | | {fred} | active |
+| macro.labor.nonfarm_payrolls | macro | labor | Nonfarm Payrolls | thousands | numeric | market_level | 30 days | 54 days | false | | {fred} | active |
+| macro.labor.jobless_claims | macro | labor | Initial Jobless Claims | count | numeric | market_level | 7 days | 14 days | false | | {fred} | active |
+| macro.liquidity.m2 | macro | liquidity | M2 Money Supply | usd_billions | numeric | market_level | 30 days | 54 days | false | | {fred} | active |
+| macro.liquidity.monetary_base | macro | liquidity | Monetary Base | usd_billions | numeric | market_level | 14 days | 15 days | false | | {fred} | active |
+| macro.liquidity.fed_balance_sheet | macro | liquidity | Fed Balance Sheet | usd_millions | numeric | market_level | 7 days | 14 days | false | | {fred} | active |
+| macro.liquidity.ecb_balance_sheet | macro | liquidity | ECB Balance Sheet | eur_millions | numeric | market_level | 7 days | 14 days | false | | {fred} | active |
+| macro.liquidity.boj_balance_sheet | macro | liquidity | BOJ Balance Sheet | jpy_billions | numeric | market_level | 30 days | 54 days | false | | {fred} | active |
+| macro.volatility.vix | macro | volatility | VIX Volatility Index | index | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.equity.sp500 | macro | equity | S&P 500 Index | index | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.commodity.gold | macro | commodity | Gold Price (USD/oz) | usd | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.commodity.wti_crude | macro | commodity | WTI Crude Oil Price | usd | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.growth.real_gdp | macro | growth | Real GDP Growth | pct | numeric | market_level | 90 days | 114 days | false | | {fred} | active |
+| macro.credit.hy_oas | macro | credit | High Yield OAS | bps | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| macro.rates.move_index | macro | rates | MOVE Index (Bond Volatility) | index | numeric | market_level | 1 day | 2 days | false | | {fred} | active |
+| price.spot.close_usd | price | spot | Spot Close Price (USD) | usd | numeric | per_instrument | 6 hours | 12 hours | false | | {tiingo} | active |
+| price.spot.volume_usd_24h | price | spot | Spot Volume 24h (USD) | usd | numeric | per_instrument | 6 hours | 12 hours | false | | {tiingo} | active |
+| price.spot.ohlcv | price | spot | Spot OHLCV | composite | numeric | per_instrument | 6 hours | 12 hours | false | | {tiingo} | active |
+| price.market.total_cap_usd | price | market | Total Market Cap (USD) | usd | numeric | market_level | 1 day | 2 days | false | | {coinpaprika} | active |
+| metadata.instrument.sector | metadata | instrument | Instrument Sector | text | categorical | per_instrument | 1 day | 7 days | true | | {coinpaprika} | active |
+| metadata.instrument.category | metadata | instrument | Instrument Category | text | categorical | per_instrument | 1 day | 7 days | true | | {coinpaprika} | active |
+| metadata.instrument.listing_date | metadata | instrument | Instrument Listing Date | text | categorical | per_instrument | 1 day | 7 days | true | | {coinpaprika} | active |
+| metadata.futures.expiry_schedule | metadata | futures | Futures Expiry Schedule | text | categorical | per_instrument | 1 day | 7 days | true | | {} | active |
 
-> **Note on `flows.exchange.net_flow_usd`:** Derived metric: `inflow_usd - outflow_usd`.
-> Computed by the Etherscan/Explorer adapter at collection time and written to Silver
-> alongside the source metrics. Phase 1 catalog addition (not in Phase 0 seed —
-> Etherscan adapter not yet built).
+**Columns not shown (all NULL/default for Phase 0 seeds):** `expected_range_low`,
+`expected_range_high`, `methodology`, `signal_pillar`, `created_at` (now()),
+`deprecated_at`.
 
-**Stablecoin domain (1d):**
-`stablecoin.supply.total_usd` · `stablecoin.supply.per_asset_usd` ·
-`stablecoin.peg.price_usd`
-
-**ETF domain (per product, 1d):**
-`etf.flows.net_flow_usd` · `etf.aum.total_usd`
-
-**DeFi domain (12h cadence for lending, 1d for protocol/dex):**
-`defi.aggregate.tvl_usd` · `defi.protocol.tvl_usd` · `defi.dex.volume_usd_24h` ·
-`defi.lending.utilization_rate` · `defi.lending.supply_apy` ·
-`defi.lending.borrow_apy` · `defi.lending.reward_apy`
+**Staleness threshold rule:** `2 × cadence` for cadence ≤ 24h. `cadence + 24h`
+for cadence > 24h. Metadata: `7 days`.
 
 > **Note on `defi.lending.utilization_rate`:** The canonical name is `utilization_rate`
 > (concept-driven, not implementation-driven). Phase 1 replaces the v1 proxy
@@ -2116,58 +2178,40 @@ are already counted in the 18-series expansion within the 74 Phase 0 seed.
 > endpoint. The canonical name is unchanged (schema immutability). The `methodology`
 > field is updated in place.
 
-> **Note on `defi.lending.reward_apy`:** Instruments sourced solely from this metric
-> are not promoted to `collection_tier = 'signal_eligible'` until v1.1. High reward
-> APY distorts signal interpretation without incentive-regime context. The eligibility
-> gate is the `instruments.collection_tier` column, not a flag on `metric_catalog`.
-
-**Macro domain (market-level, 1d) — Phase 0 seed (5 metrics):**
-`macro.rates.yield_10y` · `macro.rates.yield_2y` · `macro.fx.dxy` ·
-`macro.credit.hy_oas` · `macro.rates.fed_funds_effective`
-
-**Macro domain — Phase 1 FRED expansion (18 additional metrics):**
-`macro.rates.yield_30y` · `macro.rates.yield_10y_2y_spread` ·
-`macro.rates.yield_10y_3m_spread` · `macro.rates.real_yield_10y` ·
-`macro.rates.breakeven_inflation_10y` · `macro.equities.sp500` ·
-`macro.volatility.vix` · `macro.fx.wti_crude` · `macro.money.m2_supply` ·
-`macro.money.monetary_base` · `macro.cb.fed_total_assets` ·
-`macro.cb.ecb_total_assets` · `macro.cb.boj_total_assets` ·
-`macro.employment.nonfarm_payrolls` · `macro.employment.initial_claims` ·
-`macro.inflation.cpi_all_urban` · `macro.inflation.core_pce` ·
-`macro.gdp.real_growth`
-
 > **Note:** `macro.credit.hy_oas` (FRED series `BAMLH0A0HYM2`) is in the Phase 0
 > seed and must be added to the FRED adapter during Phase 1 build — it is not yet
 > in the legacy FRED adapter.
 
-**DeFi protocol metrics — Phase 1 additions:**
-`defi.protocol.fees_usd_24h` · `defi.protocol.revenue_usd_24h`
+**Phase 1 additions (9 metrics, not in seed table above):**
+- `defi.protocol.fees_usd_24h`, `defi.protocol.revenue_usd_24h` — DeFiLlama
+- `macro.cot.institutional_net_position`, `macro.cot.institutional_long_pct`,
+  `macro.cot.open_interest_contracts`, `macro.cot.dealer_net_position` — CFTC COT
+  via Socrata API. Released Fridays 15:30 ET; `observed_at` = Tuesday as-of date.
+  Signal relevance: EDSx-05 Tactical Macro, ML Capital Flow Direction.
+- `spot.market_cap.total_crypto_usd`, `spot.dominance.btc_pct` — derived
+- `macro.nvt_txcount_proxy` — market_cap / transfer_volume. Evidence-gated.
 
-**CFTC COT domain (weekly, BTC + ETH) — Phase 1 addition (E4):**
-`macro.cot.institutional_net_position` · `macro.cot.institutional_long_pct` ·
-`macro.cot.open_interest_contracts` · `macro.cot.dealer_net_position`
+### Source Catalog Seed Data
 
-> **Note on CFTC COT:** Source is the CFTC Traders in Financial Futures (TFF) report
-> via Socrata API (`data.cftc.gov`). Released Fridays at 15:30 ET; `observed_at` is
-> the Tuesday as-of date (not Friday release). Features must account for 3-day
-> publication lag. Instruments: BTC (CME Bitcoin futures + Micro BTC aggregated) and
-> ETH (CME Ether futures). Signal relevance: EDSx-05 Tactical Macro (REM-22/23),
-> ML Capital Flow Direction.
+**Authoritative specification.** The table below IS the Phase 0 source seed — 10
+sources. The corrective migration implements this table.
 
-**Derived (market-level, 1d):**
-`spot.market_cap.total_crypto_usd` · `spot.dominance.btc_pct`
+| source_id | display_name | tier | tos_risk | commercial_use | redistribution_status | cost_tier | redistribution_notes |
+|---|---|---|---|---|---|---|---|
+| bgeometrics | BGeometrics | 2 | unaudited | NULL | pending | free | MVRV/SOPR/NUPL/Puell Multiple |
+| binance_blc01 | Binance (BLC-01) | 2 | unaudited | NULL | pending | free | Tick liquidations, WebSocket |
+| coinalyze | Coinalyze | 1 | unaudited | NULL | pending | free | 121 perp instruments |
+| coinmetrics | CoinMetrics | 2 | restricted | NULL | blocked | free | On-chain transfer volume via GitHub CSVs — redistribution blocked |
+| coinpaprika | CoinPaprika | 1 | unaudited | true | allowed | free | Market cap, sector, category metadata |
+| defillama | DeFiLlama | 1 | unaudited | true | allowed | free | Keyless, free, excellent coverage |
+| etherscan | Etherscan V2 / Explorer | 2 | unaudited | NULL | pending | freemium | ETH + Arbitrum exchange flow wallet tracking |
+| fred | FRED (Federal Reserve) | 1 | none | true | allowed | free | Public domain |
+| sosovalue | SoSoValue | 1 | restricted | false | blocked | free | ETF flows — internal only, non-commercial ToS |
+| tiingo | Tiingo | 1 | unaudited | NULL | allowed | paid | OHLCV, paid commercial tier |
 
-**NVT proxy — Phase 1 addition (derived, 1d):**
-`macro.nvt_txcount_proxy` = market_cap / transaction_count. Composite source:
-CoinMetrics community CSV `transaction_count` + CoinMetrics `CapMrktCurUSD` for
-BTC/ETH historical market cap; Tiingo price × CoinPaprika circulating supply for
-forward/altcoin. BTC/ETH-deep, altcoin-shallow. Evidence-gated: revisit if ML F1
-drop >3% without NVT — if material, get CoinMetrics paid API quote.
-
-> **Note on market cap sourcing:** CoinMetrics `CapMrktCurUSD` is the historical
-> reference for BTC/ETH. Forward and altcoin market cap is Tiingo spot price ×
-> CoinPaprika circulating supply. CoinGecko rejected on ToS grounds (non-commercial
-> free tier). Do not use CoinGecko for any data sourcing.
+**Columns not shown (all default for Phase 0 seeds):** `propagate_restriction` (true),
+`redistribution_audited_at` (NULL), `attribution_required` (true, except FRED = false),
+`reliability_slo` (NULL), `is_active` (true), `metadata` ({}), timestamps (now())
 
 ### Database Engine Summary
 
@@ -2250,8 +2294,8 @@ CREATE TABLE forge.bronze_archive_log (
     id                BIGSERIAL PRIMARY KEY,
 
     -- identity
-    source_id         UUID        NOT NULL REFERENCES forge.source_catalog(source_id),
-    metric_id         UUID        NOT NULL REFERENCES forge.metric_catalog(metric_id),
+    source_id         TEXT        NOT NULL REFERENCES forge.source_catalog(source_id),
+    metric_id         TEXT        NOT NULL REFERENCES forge.metric_catalog(metric_id),
     partition_date    DATE        NOT NULL,
 
     -- location
@@ -2401,11 +2445,11 @@ The export asset is the sole authorized ClickHouse reader (Rule 2). It transfers
 observations from Silver (ClickHouse) to Gold (Iceberg on MinIO) incrementally.
 
 **Asset identity:** `@asset def gold_observations(...)` · AssetKey: `"gold_observations"`.
-Referenced by `multi_asset_sensor` and `@hourly` fallback schedule.
+Referenced by `AutomationCondition` and `@hourly` fallback schedule.
 
 **Trigger model — hybrid event-driven + fallback:**
-- **Primary:** `multi_asset_sensor` monitors 11 collection asset keys at 30-second
-  polling intervals. Fires when any collection asset materializes.
+- **Primary:** `AutomationCondition` on 11 collection asset keys. Fires when any
+  collection asset materializes. Replaces deprecated `@multi_asset_sensor` (removed in Dagster 2.0).
 
 **Collection AssetKey enumeration (11 keys):**
 
@@ -2450,7 +2494,7 @@ next run retries the full delta (exactly-once semantics on the Gold side).
 **Gold write — partition overwrite (not append):**
 
 1. Derive touched partitions from delta rows: `(year_month, metric_domain)`.
-2. Read existing Gold partition via PyIceberg.
+2. Read existing Gold partition via DuckDB Iceberg extension.
 3. Merge by `data_version` — for duplicate `(metric_id, instrument_id, observed_at)`
    tuples, keep the row with the higher `data_version`.
 4. Atomic Iceberg partition overwrite. Partial write due to MinIO interruption leaves
@@ -2465,6 +2509,22 @@ range and query domain efficiently.
 `flows` maps to catalog domains `flows`, `etf`, `stablecoin`. Remaining catalog
 domains (`spot`, `price`, `metadata`) do not produce Gold-layer exports in Phase 1.
 `valuation` and `chain` (as `onchain`) are Phase 2+ additions.
+
+**Gold Iceberg table schema (Phase 1 — observations export):**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| metric_id | STRING | FK to metric_catalog |
+| instrument_id | STRING | FK to instruments (nullable for market_level) |
+| observed_at | TIMESTAMP | Observation time (UTC) |
+| value | DOUBLE | Metric value |
+| data_version | INT | ReplacingMergeTree version for dedup |
+| ingested_at | TIMESTAMP | Silver ingestion time (PIT anchor) |
+| metric_domain | STRING | Partition key: derivatives, macro, flows, defi, onchain |
+| year_month | STRING | Partition key: YYYY-MM format |
+
+Partitioned by `(year_month, metric_domain)`. Written by DuckDB Iceberg DML.
+Marts table schemas defined before Phase 2 build prompt (FTB-24 remaining scope).
 
 **Anomaly guard:** Export fails if delta exceeds 10× rolling 7-day average or >2M rows.
 Operator bypass: `force_backfill=True` in Dagster run config (single run only).
@@ -2628,7 +2688,7 @@ positioning for BTC and ETH
 | Dealer long − short | `macro.cot.dealer_net_position` | Dealer/intermediary net position |
 
 **Instruments:** BTC (CME Bitcoin futures + Micro BTC aggregated) and ETH (CME Ether
-futures). `instrument_id` = `BTC` or `ETH`.
+futures). `instrument_id` = `BTC-USD` or `ETH-USD` (matching canonical instruments table).
 
 **Timestamp handling:** `observed_at` = Tuesday as-of date from the report (not the
 Friday release date). `ingested_at` = Friday collection timestamp (actual wall-clock
@@ -2650,6 +2710,17 @@ catalog. Cannot appear in any external data product until ToS audit resolves or 
 tier acquired.
 **Cadence:** Daily at 20:00 UTC (after US market close)
 
+**Field mappings:**
+
+| Source field | Canonical metric_id | instrument_id | Notes |
+|---|---|---|---|
+| BTC ETF net flow (USD) | `etf.flows.net_flow_usd` | `BTC-USD` | Daily net inflow/outflow |
+| ETH ETF net flow (USD) | `etf.flows.net_flow_usd` | `ETH-USD` | Daily net inflow/outflow |
+| SOL ETF net flow (USD) | `etf.flows.net_flow_usd` | `SOL-USD` | Daily net inflow/outflow |
+
+**Derived by adapter:**
+- `etf.flows.cumulative_flow_usd` — running sum of net_flow_usd per instrument_id, computed at write time.
+
 #### Tiingo
 
 **Provides:** OHLCV (crypto + equities)
@@ -2666,7 +2737,7 @@ Adapter must branch on `asset_class`.
 - **Gate.io values are in wei, not ETH.** Confirmed bug. Adapter applies conversion:
   `eth_value = wei_value / 1e18`, then `usd_value = eth_value × spot_price`. Raw
   Bronze landing preserves original wei values.
-- Spot price for conversion fetched from `spot.price.close_usd` in canonical store.
+- Spot price for conversion fetched from `price.spot.close_usd` in canonical store.
 
 #### CoinPaprika
 
@@ -2715,6 +2786,22 @@ hourly rsync pipeline:
 **Note:** Every day without rsync configured risks irrecoverable data loss. This is
 a P0 Phase 1 action.
 
+### Adapter Spec Completeness
+
+| Adapter | Field mapping table | Status |
+|---|---|---|
+| Coinalyze | Yes (6 fields) | Complete |
+| DeFiLlama | Yes (5 fields) | Complete |
+| FRED | Yes (5 Phase 0 + 18 Phase 1 implicit) | Needs explicit Phase 1 mappings |
+| CFTC COT | Yes (4 fields) | Complete |
+| SoSoValue | Yes (3 fields) | Complete |
+| Tiingo | No | Build during adapter implementation |
+| CoinPaprika | No | Build during adapter implementation |
+| BGeometrics | No | Build during adapter implementation |
+| CoinMetrics | No | Build during adapter implementation |
+| Etherscan/Explorer | No | Build during adapter implementation |
+| Binance BLC-01 | No | Build during adapter implementation |
+
 ### Source Gap Analysis
 
 | Metric | Gap | Decision |
@@ -2724,7 +2811,7 @@ a P0 Phase 1 action.
 | `flows.exchange.*` beyond 18 instruments | Explorer limited coverage | Accept for v1. Expand in v1.1. |
 | `spot.market_cap.usd` | Tiingo does not provide | Use CoinPaprika (existing, low ToS risk). |
 | Options metrics | No current source | Null-propagate in v1. Deribit adapter in v1.1. |
-| `flows.onchain.transfer_volume_usd` | CoinMetrics community covers BTC+ETH | Use CoinMetrics. Flag `redistribution = false` pending ToS audit. |
+| `chain.activity.transfer_volume_usd` | CoinMetrics community covers BTC+ETH | Use CoinMetrics. Flag `redistribution = false` pending ToS audit. |
 | BTC directional exchange flows | No v1 source covers per-exchange BTC in/out | Null-propagate. CryptoQuant (parked, paid) is the resolution path. v1.1 milestone. |
 
 ### Migration Plan
@@ -4125,7 +4212,7 @@ per-instrument partitioning).
 | Runbooks | FTB-01 through FTB-08 runbooks written and tested (see §Solo Operator Operations) |
 | Ops credentials | `calendar_writer`, `risk_writer`, and `ch_ops_reader` roles created and verified |
 | Calendar schema | Event calendar extension deployed (system_id, severity, metadata, expires_at, recurring_rule columns) |
-| Polygon.io design | Polygon.io integration design session completed before Phase 1 build prompt |
+
 
 **Timeline estimate:** 2-3 weeks. Primary risk: migration adapter bugs, DeFiLlama
 backfill rate limits.
@@ -4552,8 +4639,8 @@ instance. EDS defines equivalent profiles for `eds_writer` (4GB/4 threads) and
 `eds_reader` (2GB/2 threads). Combined maximum concurrent memory: 13GB across both
 projects (well within proxmox capacity).
 
-DDL: `db/migrations/clickhouse/0002_credential_isolation.sql`. Includes `default` user
-suspension and 5-assertion verification checklist.
+DDL: `db/migrations/clickhouse/0002_phase0_corrective.sql`. Includes `default` user
+REVOKE, settings profiles, and scoped user creation.
 
 **ClickHouse resource profiles (shared instance with EDS):**
 
@@ -4724,8 +4811,10 @@ anomaly guard, and partition overwrite mechanics.
 
 #### ADR-002: Apache Iceberg as Bronze and Gold Storage Format
 
-**Decision:** Apache Iceberg tables on MinIO for both Bronze and Gold. PyIceberg for
-writes. DuckDB with `iceberg` extension for reads.
+**Decision:** Apache Iceberg tables on MinIO for both Bronze and Gold. DuckDB with
+`iceberg` extension for both reads and writes (DML support in v1.4.2+). Single engine
+for analytical read/write path. PyIceberg available as fallback if DuckDB Iceberg write
+support proves insufficient during Phase 1.
 
 **Disqualified alternatives:**
 - Raw Parquet on MinIO: No time travel, no ACID, no schema evolution.
@@ -4996,8 +5085,8 @@ Verify NAS backup cadence before Phase 1 goes live.
 **Dagster failure:**
 1. `docker restart empire_dagster_daemon empire_dagster_webserver empire_dagster_code`
    (< 3 min)
-2. Metadata DB corrupted: delete SQLite file and restart — Dagster rebuilds from asset
-   definitions. No source data lost. (< 10 min)
+2. Metadata DB corrupted: reset PostgreSQL Dagster metadata schema and restart — Dagster
+   rebuilds from asset definitions. No source data lost. (< 10 min)
 3. Missed runs: Dagster `catchup` is configured per asset. Default: run once on
    recovery, not replay all missed intervals.
 
@@ -5283,9 +5372,9 @@ The design is correctly implemented when:
 | Dashboard / UI | Not in v1 | v2 trigger conditions met (both) |
 | Etherscan Pro | Free tier backfill first. Exchange flows Priority 2. | Budget decision |
 | Token unlock data | Deferred from Phase 3. Accept null in v1. | v1.1 or Phase 3 reassessment |
-| Polygon.io integration | Design session required before Phase 1 build prompt. | **Blocking** |
+| ~~Polygon.io integration~~ | **Removed.** EDS provides spot/OHLCV via `empire_to_forge_sync`. Tiingo retained for unit normalization dependency. | — |
 | Feature catalog storage (FTB-23) | Storage mechanism undefined (PostgreSQL table vs YAML vs metric_catalog extension). | Before Phase 2 build prompt |
-| Gold/Marts Iceberg schema (FTB-24) | Bronze and Silver DDL specified. Gold and Marts table schemas not defined. | Before Phase 2 build prompt |
+| Gold/Marts Iceberg schema (FTB-24) | Gold observations schema defined (Phase 1). Marts table schemas not defined. | Marts schema: before Phase 2 build prompt |
 | EDS Track 3 metric naming (CROSS-11) | All Track 3 metrics use FTB canonical names (R5 resolved). Complete verification table not yet produced. | Before sync activation |
 
 ---
@@ -5458,6 +5547,6 @@ All decisions from all threads in one place.
 ---
 
 *Document synthesized: 2026-03-06*
-*Authority: thread_1 through thread_7 + thread_infrastructure (historical sources; this v3.1 document is now authoritative)*
+*Authority: thread_1 through thread_7 + thread_infrastructure (historical sources; this v4.0 document is now authoritative)*
 *All locked decisions require architect approval to reopen.*
 *Next action: Phase 0 — provision infrastructure, apply DDL, seed catalogs, verify gates.*

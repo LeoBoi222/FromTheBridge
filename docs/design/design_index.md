@@ -19,6 +19,11 @@
 - `Archived/FINAL_AUDIT_REPORT.md` — findings absorbed into v4.0
 - `Archived/eds_ftb_cohesion_audit.md` — resolutions absorbed into v4.0
 - `Archived/thread_backfill_readiness.md` — findings absorbed into v4.0
+- `Archived/V3_UPGRADE_HANDOFF.md` — v2→v3.1 upgrade record
+- `Archived/V3_REVIEW_HANDOFF.md` — v3.1 review session handoff
+- `Archived/V3.1_REVIEW_REPORT.md` — v3.1 automated review (findings absorbed into v4.0)
+- `Archived/V3.1_REVIEW_HANDOFF_SESSION2.md` — v3.1 review session 2
+- `Archived/V3.1_REVIEW_HANDOFF_SESSION3.md` — v3.1 review session 3
 
 **Session plans (`docs/Historical/`):** Evidence trails. Not authority. All decisions
 pulled into v4.0 before archival.
