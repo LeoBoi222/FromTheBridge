@@ -1,0 +1,167 @@
+name: Canonical Investment Data Lakehouse
+version: "1.0"
+description: Locked end-state architecture for revenue-generating retail financial data platform
+
+layers:
+  L1_Data_Sources:
+    description: Vendor feeds and raw inputs
+    vendors:
+      - Polygon (quotes/real-time)
+      - Tiingo (EOD)
+      - FMP (fundamentals)
+      - FRED (macro)
+      - Plaid (holdings/transactions)
+    backfill_strategy: 10yr+ history, partitioned by date/vendor
+    quality_gates:
+      - duplicate detection
+      - anomaly flags
+      - schema validation
+
+  L2_Ingestion:
+    description: Pipelines from vendors to Bronze
+    batch:
+      tool: Dagster or Airflow
+      schedule: daily/hourly
+    streaming:
+      tool: Kafka + Flink
+      for: real-time quotes/order flow
+    backfill:
+      tool: one-time Dagster jobs
+
+  L3_Lakehouse:
+    description: Bronze/Silver/Gold storage
+    bronze:
+      format: Parquet/Delta on S3/Proxmox storage
+      immutable: true
+    silver:
+      engine: ClickHouse (time-series) + Postgres (reference)
+      schemas:
+        instruments:
+          fields:
+            - id UUID PK
+            - figi
+            - isin
+            - asset_class
+            - issuer_id UUID
+            - first_seen TIMESTAMPTZ
+            - last_updated TIMESTAMPTZ
+        prices:
+          fields:
+            - instrument_id UUID
+            - timestamp TIMESTAMPTZ
+            - open DECIMAL
+            - high DECIMAL
+            - low DECIMAL
+            - close DECIMAL
+            - volume BIGINT
+            - adj_close DECIMAL
+            - exchange VARCHAR
+            - lineage_hash VARCHAR
+        corporate_actions:
+          fields:
+            - instrument_id UUID
+            - event_date DATE
+            - type VARCHAR    # split/dividend/symbol_change/etc
+            - ratio NUMERIC
+        macro_series:
+          fields:
+            - series_id VARCHAR  # CPI, FEDFUNDS, etc
+            - timestamp TIMESTAMPTZ
+            - value DECIMAL
+        transactions:
+          fields:
+            - user_id UUID
+            - instrument_id UUID
+            - trade_datetime TIMESTAMPTZ
+            - side VARCHAR      # buy/sell
+            - quantity DECIMAL
+            - price DECIMAL
+            - venue VARCHAR
+      rules: Immutable post-MVP; partitioned by date and symbol
+    gold:
+      engine: Delta Lake or Iceberg
+      content: aggregates, factor series, and analytic panels
+
+  L4_Semantic:
+    description: dbt data marts for product tiers
+    tool: dbt + catalog (Unity Catalog/OpenMetadata)
+    examples:
+      - pro_daily_panel (EOD + factors, multi-asset)
+      - elite_intraday_panel (1min+ aggregates, L2 summaries)
+      - casual_fundamentals_view (core ratios + macro context)
+
+  L5_Serving:
+    description: APIs + UI (revenue surface)
+    api:
+      spec: GraphQL and REST
+      endpoints:
+        - /quotes
+        - /factors
+        - /macro
+        - /portfolio
+        - /transactions
+        - /backtest
+        - /lineage
+    ui:
+      framework: Next.js + Tailwind
+      pages:
+        - home_dashboard
+        - portfolio
+        - screeners
+        - analytics_hub
+        - transparency_and_lineage
+    auth: OAuth/JWT with tier-based RBAC
+
+  L6_Analytics:
+    description: Compute engines for factors, signals, and ML
+    batch:
+      tool: DuckDB or Spark on GPU nodes
+      output: daily factors, panels written to Gold
+    streaming:
+      tool: Flink
+      output: real-time signals and intraday metrics
+    ml:
+      tool: scikit-learn / MLflow
+      output: model scores, advanced factors
+
+  L7_Governance:
+    description: Audit, observability, metadata
+    tools:
+      - OpenMetadata or similar lineage/catalog
+      - Prometheus/Grafana for metrics
+      - Centralized logging (SOC2-friendly)
+    capabilities:
+      - dataset lineage
+      - schema history
+      - access logs
+      - data quality reports
+
+revenue_tiers:
+  free:
+    price: 0
+    features:
+      - 15min delayed quotes
+      - basic charts and screeners
+      - limited macro dashboards
+  pro:
+    price: 29
+    features:
+      - real-time EOD + 1min intraday
+      - 10+ years history
+      - 20+ factors library
+      - portfolio sync + API (1k calls/day)
+  elite:
+    price: 149
+    features:
+      - real-time L1/L2 where licensed
+      - tick / high-frequency history (select markets)
+      - 50+ factors and options analytics
+      - advanced backtesting API and exports
+      - priority support
+
+canonical_rules:
+  1_layer_independence: Changes in L1 must not break L3 schemas.
+  2_immutability: Silver schemas are frozen post-MVP; changes require version bump.
+  3_validation: CI/CD runs E2E tests per layer against this spec.
+  4_reviews: Weekly architecture checkpoint versus this file; changes recorded as versioned diffs.
+

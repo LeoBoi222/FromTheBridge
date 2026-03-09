@@ -6,23 +6,16 @@ FromTheBridge is a next-generation data lakehouse for crypto market intelligence
 
 **Relationship to Empire:** Shared infrastructure (same machines, same PostgreSQL). Forge DB (`empire_forge_db`, port 5435) is the shared boundary — FromTheBridge reads it via `forge_reader` during migration, then decommissions it. Empire's EDS, MAE, CAA, W6, Content Engine, Bridge, and Contracts are documented in the Empire CLAUDE.md, not here.
 
-**Design documents:** All authoritative. Located in `docs/design/`.
+**Design document:** Single source of truth in `docs/design/`.
 
 | Document | Scope |
 |----------|-------|
-| `FromTheBridge_design_v2.md` | Canonical synthesis — all layers, all threads |
-| `thread_infrastructure.md` | ADRs, deployment topology, hard rules |
-| `thread_2_signal.md` | EDSx + ML signal architecture |
-| `thread_3_features.md` | Feature engineering, PIT, null states |
-| `thread_4_data_universe.md` | PostgreSQL catalog + ClickHouse Silver DDL |
-| `thread_5_collection.md` | Adapters, Dagster, GE, BLC-01, migration |
-| `thread_6_build_plan.md` | Phase gates, scope, duration estimates |
-| `thread_7_output_delivery.md` | API, tiers, SLAs, first customer |
-| `design_index.md` | Navigation and cross-reference only |
+| `FromTheBridge_design_v4.0.md` | SSOT — all layers, all threads, all session decisions |
+| `design_index.md` | Navigation and phase reading map only |
 
 ---
 
-## ARCHITECTURE — 9-LAYER STACK
+## ARCHITECTURE — 9-LAYER STACK (summary — see v4.0 for canonical)
 
 Data flows downward only. No layer reads a layer above itself.
 
@@ -31,20 +24,20 @@ Data flows downward only. No layer reads a layer above itself.
 | 8 | Serving | FastAPI + DuckDB + Arrow Flight | `/v1/signals`, `/v1/timeseries`, webhooks, Telegram. Reads Gold + Marts only. Phase 6. |
 | 7 | Catalog | PostgreSQL (`forge` schema) | 12 relational tables: assets, instruments, venues, metric_catalog, source_catalog, metric_lineage, etc. No time series — ever. |
 | 6 | Marts | dbt (SQL) + forge_compute (Python) | Feature store. Rolling window, cross-sectional, breadth scores. PIT enforced. Reads Gold via DuckDB. |
-| 5 | Gold | Iceberg on MinIO | Analytical layer. DuckDB reads here. Populated by 6h Silver → Gold export. |
+| 5 | Gold | Iceberg on MinIO | Analytical layer. DuckDB reads here. Populated by event-triggered hybrid export (1h fallback). |
 | 4 | Silver | ClickHouse (ReplacingMergeTree) | Observation store. EAV: `(metric_id, instrument_id, observed_at, value)`. Bitemporal. Write-only except export job. |
-| 3 | Bronze | Iceberg on MinIO | Raw landing. Append-only, 90-day retention. Partitioned by `(source_id, date, metric_id)`. |
+| 3 | Bronze | Iceberg on MinIO | Raw landing. Two-bucket: `bronze-hot` (90-day lifecycle) + `bronze-archive` (indefinite). Partitioned by `(source_id, date, metric_id)`. |
 | 2 | Adapters | Python (per-source) | 10-responsibility contract: auth, rate limiting, normalization, validation, Bronze write, Silver write, dead letter. |
 | 1 | Orchestration | Dagster (Docker service) | Software-Defined Assets. One asset per `(metric_id, source_id)`. Freshness from `cadence_hours`. |
-| 0 | Sources | External APIs | 10 v1 sources. See Data Sources section. |
+| 0 | Sources | External APIs | 11 v1 sources. See Data Sources section. |
 
 ### Three Hard Rules
 
 **Rule 1 — One-way gate:** Data flows down only. Feature compute reads Gold (Layer 5), never Silver (Layer 4). Serving reads Marts (Layer 6). No exceptions. Enforced by Dagster asset dependency graph + credential isolation.
 
-**Rule 2 — ClickHouse write-only:** The only process that reads ClickHouse is the Dagster export asset (Silver → Gold, every 6h). No other service has ClickHouse credentials. Unmerged `ReplacingMergeTree` rows would produce silently incorrect results.
+**Rule 2 — No application service reads forge.* in ClickHouse:** Only Dagster assets read the `forge` database in ClickHouse — the export asset (`ch_export_reader`) for Silver → Gold and ops health assets (`ch_ops_reader`) for monitoring. Both use dedicated scoped credentials. No application service has ClickHouse credentials. The `empire.*` database is governed by EDS rules, not Rule 2.
 
-**Rule 3 — No time series in PostgreSQL:** The catalog holds relational integrity only. No `observed_at + value` columns in any PostgreSQL table. No metric observations, no derived computations, no feature values.
+**Rule 3 — No time series in forge.* PostgreSQL tables:** The `forge` schema holds relational integrity only. No `observed_at + value` columns in any `forge.*` table. No metric observations, no derived computations, no feature values. The `empire_utxo` schema on the same PostgreSQL instance is governed by EDS Rule 4 (UTXO lifecycle state, not time series).
 
 ### Two Signal Tracks
 
@@ -63,29 +56,30 @@ Data flows downward only. No layer reads a layer above itself.
 | Phase | Description | Status | Gate Reference |
 |-------|-------------|--------|----------------|
 | Design | All 7 thread files complete | ✅ Complete | Architect confirmed 2026-03-05 |
-| Phase 0 | Schema Foundation | ✅ Complete | thread_6 §Phase 0 Gate (13 criteria) |
-| Phase 1 | Data Collection | ❌ Not started | thread_6 §Phase 1 Gate |
-| Phase 2 | Feature Engineering | ❌ Not started | thread_6 §Phase 2 Gate |
-| Phase 3 | EDSx Signal | ❌ Not started | thread_6 §Phase 3 Gate |
-| Phase 4 | ML Track (Shadow) | ❌ Not started | thread_6 §Phase 4 Gate |
-| Phase 5 | Serving | ❌ Not started | thread_6 §Phase 5 Gate |
-| Phase 6 | Productization | ❌ Not started | thread_6 §Phase 6 Gate |
+| Phase 0 | Schema Foundation | ✅ Complete | v4.0 §Phase 0 Gate (8 criteria) |
+| Phase 1 | Data Collection | ❌ Not started | v4.0 §Phase 1 Gate |
+| Phase 2 | Feature Engineering | ❌ Not started | v4.0 §Phase 2 Gate |
+| Phase 3 | EDSx Signal | ❌ Not started | v4.0 §Phase 3 Gate |
+| Phase 4 | ML Track (Shadow) | ❌ Not started | v4.0 §Phase 4 Gate |
+| Phase 5 | Serving | ❌ Not started | v4.0 §Phase 5 Gate |
+| Phase 6 | Productization | ❌ Not started | v4.0 §Phase 6 Gate |
 
 **What exists:**
 - Forge DB schema deployed (`db/migrations/0001_phase0_schema.sql`)
-- 74 metrics in catalog across 9 domains
-- 14 sources in source catalog (10 v1 active + 4 reference/fallback)
+- 74 metrics in catalog across 9 domains (Phase 0 seed); 83 after Phase 1 additions (+8 original Phase 1 + 1 NVT proxy)
+- 10 sources in source catalog (11 v1 target — missing CFTC COT; reference sources not cataloged per v3.1)
+- Instruments table empty — Phase 0 corrective will seed BTC, ETH, SOL + `__market__` only. Full universe populated by Phase 1 adapter discovery per instrument admission framework (`docs/plans/2026-03-09-instrument-admission-design.md`)
 - 12 PostgreSQL catalog tables created and seeded
 - ClickHouse Silver schema deployed (observations, dead_letter, current_values)
-- MinIO bronze + gold buckets initialized
+- MinIO `bronze-hot`, `bronze-archive`, and `gold` buckets initialized
 - `docker-compose.yml` with Forge DB + ClickHouse services
 
 **Known gaps (Phase 0 corrective):**
 - ClickHouse DDL migration file location: `db/migrations/clickhouse/0001_silver_schema.sql`
 - Dagster service definition not yet in docker-compose.yml (Phase 1)
 - Great Expectations not yet configured (Phase 1)
-
-**Blocking:** Polygon.io integration design session — must complete before Phase 1 build prompt.
+- **Blocking:** Polygon.io integration design session required before Phase 1
+- Corrective migration needed: metric_catalog missing columns, metric_lineage wrong structure, ClickHouse current_values wrong engine
 
 ---
 
@@ -107,7 +101,7 @@ Data flows downward only. No layer reads a layer above itself.
 |-------|----------|---------|
 | `/` | 4TB NVMe | OS, Docker engine, container layers |
 | `/mnt/empire-db` | 2TB SSD | PostgreSQL, ClickHouse, Dagster metadata, Redis |
-| `/mnt/empire-data` | 4TB SSD | MinIO (Bronze Iceberg + Gold Iceberg), Prometheus, Grafana, Gitea |
+| `/mnt/empire-data` | 4TB SSD | MinIO (`bronze-hot` + `bronze-archive` + `gold` Iceberg), Prometheus, Grafana, Gitea |
 
 NFS mounts to NAS for bronze archives + backups (read-only — backup destination only).
 
@@ -155,10 +149,10 @@ bluefin (develop + test) → rsync → proxmox (rebuild + deploy)
 
 | Database | Container | Port | Contents |
 |----------|-----------|------|----------|
-| PostgreSQL | empire_postgres | 5433 | App state, instruments, catalog tables (`forge.*` schema) |
+| PostgreSQL | empire_postgres | 5433 | `forge` schema: catalog tables. `empire_utxo` schema (EDS): UTXO tracking state. |
 | TimescaleDB | empire_timescaledb | 5434 | Legacy time-series (Empire EDS) |
 | Forge DB (legacy) | empire_forge_db | 5435 | Legacy raw data. Read-only during migration. Decommissioned after Phase 1 + 90 days. |
-| ClickHouse | empire_clickhouse | 8123/9000 | Silver observation store: `forge.observations`, `forge.dead_letter`, `forge.current_values` |
+| ClickHouse | empire_clickhouse | 8123/9000 | `forge` DB: observations, dead_letter, current_values. `empire` DB (EDS): 12 tables. |
 | MinIO | empire_minio | 9001/9002 | Bronze (Iceberg) + Gold (Iceberg) object storage |
 
 **Future:** ClickHouse Cloud, MinIO → S3, Dagster Cloud, PostgreSQL → RDS. All zero-code-change migrations (endpoint config swap). Triggers defined in `thread_infrastructure.md`.
@@ -167,7 +161,7 @@ bluefin (develop + test) → rsync → proxmox (rebuild + deploy)
 
 **Forge catalog tables (PostgreSQL):** assets, asset_aliases, venues, instruments, source_catalog, metric_catalog, metric_lineage, event_calendar, supply_events, adjustment_factors, collection_events, instrument_metric_coverage. Write: `forge_user`. Read: `forge_reader`.
 
-**ClickHouse Silver:** `forge.observations` (ReplacingMergeTree, ordering key `metric_id, instrument_id, observed_at`) · `forge.dead_letter` (MergeTree, TTL 90 days) · `forge.current_values` (AggregatingMergeTree, argMaxState — incremental on insert).
+**ClickHouse Silver (forge):** `forge.observations` (ReplacingMergeTree, ordering key `metric_id, instrument_id, observed_at`) · `forge.dead_letter` (MergeTree, TTL 90 days) · `forge.current_values` (AggregatingMergeTree, argMaxState — incremental on insert). The `empire` database on the same instance is EDS-owned — see §Empire Cross-Reference.
 
 **Schema immutability:** No DDL changes after Phase 0 gate passes. New metrics and sources add catalog rows, not columns or tables.
 
@@ -176,25 +170,29 @@ bluefin (develop + test) → rsync → proxmox (rebuild + deploy)
 | Operation | Container | Port | User | Schema | Notes |
 |-----------|-----------|------|------|--------|-------|
 | Catalog read | empire_postgres | 5433 | forge_reader | forge | MCP server uses this |
-| Catalog write | empire_postgres | 5433 | forge_writer | forge | |
-| Silver write | empire_clickhouse | 9000 | forge_writer | forge | |
-| Silver read (export only) | empire_clickhouse | 9000 | forge_reader | forge | Rule 2 — export job only |
-| Dead letter write | empire_clickhouse | 9000 | forge_writer | forge | |
-| Bronze write | empire_minio | 9001 | — | bronze/ | |
-| Gold write | empire_minio | 9001 | — | gold/ | |
+| Catalog write | empire_postgres | 5433 | forge_user | forge | |
+| Silver write | empire_clickhouse | 9000 | ch_writer | forge | INSERT-only |
+| Silver read (export) | empire_clickhouse | 9000 | ch_export_reader | forge | Rule 2 — SELECT-only, export job only |
+| Silver read (ops health) | empire_clickhouse | 9000 | ch_ops_reader | forge | Rule 2 — SELECT-only, Dagster health assets only |
+| EDS sync write | empire_clickhouse | 9000 | ch_writer | forge | INSERT-only, source_id='eds_derived', via empire_to_forge_sync |
+| Dead letter write | empire_clickhouse | 9000 | ch_writer | forge | INSERT-only |
+| Bronze-hot write | empire_minio | 9001 | bronze_writer | bronze-hot/ | 90-day lifecycle |
+| Bronze-archive write | empire_minio | 9001 | bronze_archive_writer | bronze-archive/ | Indefinite retention |
+| Gold write | empire_minio | 9001 | export_writer | gold/ | |
 | Legacy Forge read | empire_forge_db | 5435 | forge_reader | forge | Decommission after Phase 1 + 90d |
 | Pipeline items | empire_postgres | 5433 | crypto_user | bridge | |
-| Never write | — | — | — | — | 192.168.68.91 (NAS), 192.168.68.12 (Server2) |
+| Never write | — | — | — | — | 192.168.68.91 (NAS) |
+| No FTB services | — | — | — | — | 192.168.68.12 (Server2, reserved for EDS: BLC-01, pruned ETH) |
 
 ---
 
 ## DATA SOURCES
 
-### v1 Sources (10 active)
+### v1 Sources (11 active)
 
 | Source | Tier | Data | Cadence | Cost |
 |--------|------|------|---------|------|
-| Coinalyze | T1 | Funding, OI, liquidations, L/S ratio (121 instruments) | 8h | Free |
+| Coinalyze | T1 | Funding, OI, liquidations, L/S ratio (universe per adapter discovery) | 8h | Free |
 | DeFiLlama | T1 | Stablecoins, DeFi protocols, TVL, DEX volume, lending | 12h | Free |
 | FRED | T1 | 23 macro series (rates, FX, inflation, liquidity, commodities) | 24h+ | Free |
 | Tiingo | T1 | OHLCV spot prices (dependency for unit normalization) | 6h | Paid |
@@ -203,15 +201,28 @@ bluefin (develop + test) → rsync → proxmox (rebuild + deploy)
 | CoinPaprika | T1 | Market cap, sector, category metadata | 24h | Free |
 | CoinMetrics | T2 | On-chain transfer volume (GitHub CSVs) | 24h | Free (redistribution blocked) |
 | BGeometrics | T2 | MVRV, SOPR, NUPL, Puell Multiple | 24h | Free |
-| Binance BLC-01 | T2 | Tick liquidations (WebSocket, ~65-72k events/day) | Real-time | Free |
+| Binance BLC-01 | T2 | Tick liquidations (WebSocket) | Real-time | Free |
+| CFTC COT | T2 | Commitment of Traders positioning (BTC, ETH futures) | Weekly (Fri) | Free |
 
-**Reference/fallback (in catalog, not v1 active):** Glassnode, CoinGecko, KuCoin, Explorer (separate from Etherscan).
+**Reference/fallback (in catalog, not v1 active):** CoinGecko, KuCoin, Explorer (separate from Etherscan).
 
 **Redistribution blocked:** SoSoValue (`redistribution = false`), CoinMetrics (`redistribution = false`). Excluded from all external data products until flags changed.
 
-**Permanently excluded:** Santiment, BSCScan, Solscan (deprecated).
+**Permanently excluded:** Santiment, Glassnode, BSCScan, Solscan (deprecated).
 
 **Parked (paid, not in budget):** CoinGlass, CryptoQuant, CoinMarketCap.
+
+---
+
+## DATA SOURCE LEGAL COMPLIANCE
+
+Full framework in `docs/design/Archived/thread_7_output_delivery.md` §Data Source Legal Compliance Framework. Four-layer mitigation: architecture isolation, tier compliance flags, formal ToS audit, signal abstraction.
+
+**Policy:** Any source whose ToS prohibits commercial use in derived products must be upgraded to a commercial license or excluded from customer-facing outputs before Phase 6 gate. No exceptions.
+
+**FRG-45 trigger:** Tiingo commercial redistribution clause must be verified before Phase 1 live collection — it is the only paid source and the verification must happen before adapters are built, not at Phase 5.
+
+Pipeline items FRG-40 through FRG-46 track per-source audit execution.
 
 ---
 
@@ -255,15 +266,15 @@ Phase gates are hard pass/fail. No phase begins until the previous gate passes a
 
 | Phase | Key Gate Criteria | Duration Est. |
 |-------|-------------------|---------------|
-| 0 — Schema | 13 criteria: 12 PG tables, 10 source rows, ≥50 metrics, Rule 3 check, CH 3 objects, write/read round-trip, dead_letter, current_values, PIT revision, MinIO buckets | 3–5 days |
-| 1 — Collection | 3 Dagster services healthy, ≥1 asset/source, Tiingo Silver rows, all 10 sources Silver rows, Bronze Iceberg exists, GE checkpoint, dead letter captures, BLC-01 rsync, NAS backups (×2), CH credential isolation, full round-trip, `macro.credit.hy_oas` in FRED | 2–3 weeks |
+| 0 — Schema | 8 gate criteria: 12 PG catalog tables, CH observations + dead_letter + current_values, MinIO buckets, ≥50 metrics seeded, PIT query, redistribution flags | 3–5 days |
+| 1 — Collection | 3 Dagster services healthy, ≥1 asset/source, Tiingo Silver rows, all 11 sources Silver rows, Bronze Iceberg exists, GE checkpoint, dead letter captures, BLC-01 rsync, NAS backup verified, CH credential isolation, full round-trip, `macro.credit.hy_oas` in FRED | 2–3 weeks |
 | 2 — Features | Gold Iceberg readable by DuckDB, all dbt models pass, forge_compute produces features, null states tested, PIT audit passes, breadth scores verified | 2–3 weeks |
-| 3 — EDSx | All 5 pillars scoring, confidence computation, regime classification, output contract conformant | 1–2 weeks |
-| 4 — ML | All 5 models trained (walk-forward), graduation criteria on OOS, shadow mode deployed, ≥30 day shadow | 3–4 weeks |
-| 5 — Serving | FastAPI endpoints, API key auth + tiers, redistribution filter, Arrow Flight, webhook + Telegram, provenance trace, staleness propagation | 1–2 weeks |
-| 6 — Product | Health monitoring, methodology docs, ToS audit (all 10 sources), redistribution verified, first customer delivery | 1–2 weeks |
+| 3 — EDSx | All 5 pillars scoring, confidence computation, regime classification, output contract conformant to §L2.8, `marts.signals_history` fields complete | 1–2 weeks |
+| 4 — ML | All 5 models trained (walk-forward), graduation criteria on OOS, shadow mode deployed, ≥30 day shadow, shadow artifacts generated | 3–4 weeks |
+| 5 — Serving | FastAPI endpoints, API key auth (argon2id) + 5-tier entitlement (Preview/Signal API/Intelligence Suite/Risk Feed/Ecosystem Monitor, 12 tables), redistribution filter, Arrow Flight, webhook + Telegram, provenance trace, staleness propagation, F1 go-live criteria | 1–2 weeks |
+| 6 — Product | Health monitoring, methodology docs, ToS audit (all 11 sources), redistribution verified, first customer delivery | 1–2 weeks |
 
-**Total estimate:** 13–20 weeks. Shadow period (Phase 4) is a floor.
+**Total estimate:** 13–18 weeks. Shadow period (Phase 4) is a floor.
 
 ---
 
@@ -277,7 +288,9 @@ Phase gates are hard pass/fail. No phase begins until the previous gate passes a
 
 **What lives here (not Empire):** 9-layer lakehouse architecture, ClickHouse Silver, Iceberg Bronze/Gold, Dagster orchestration, dbt Marts, DuckDB serving, adapter contracts, feature engineering, EDSx v2, ML training pipeline.
 
-**Shared boundary:** Forge DB (`empire_forge_db`, port 5435) via `forge_reader` role. FromTheBridge reads Forge during Phase 1 migration. After migration + 90-day window, Forge DB is decommissioned.
+**Shared boundary (legacy):** Forge DB (`empire_forge_db`, port 5435) via `forge_reader` role. FromTheBridge reads Forge during Phase 1 migration. After migration + 90-day window, Forge DB is decommissioned.
+
+**Shared boundary (EDS):** EDS cohabits on proxmox infrastructure. `empire.*` ClickHouse database (12 tables, EDS-owned) on the same ClickHouse instance. `empire_utxo` PostgreSQL schema (EDS-owned) on the same PostgreSQL instance. `empire_to_forge_sync` Dagster asset writes promoted EDS metrics to `forge.observations` with `source_id='eds_derived'`. EDS reads `empire.*` via its API — does not violate Rule 2 (scoped to `forge.*`). Full cohesion audit: `docs/design/eds_ftb_cohesion_audit.md`.
 
 **Empire consumers of FromTheBridge data (future):** EDS (reads features), EDSx (reads features), ML (reads features), Reconciliation (reads signal outcomes). These consumers are documented in Empire's CLAUDE.md. FromTheBridge builds for all of them — null handling, not omission.
 
@@ -288,13 +301,13 @@ Phase gates are hard pass/fail. No phase begins until the previous gate passes a
 - Deploy without local build + test on bluefin
 - Edit code on proxmox
 - Target NAS (192.168.68.91) for any writes — NAS is backup storage only
-- Target Server2 (192.168.68.12) for any writes — Server2 is Binance Collector only
+- Deploy FromTheBridge services to Server2 (192.168.68.12) — Server2 is reserved for EDS operations (BLC-01 collector, pruned ETH failover)
 - Build without stating plan first
 - Create tables that duplicate existing data
 - Self-certify gates that don't work end-to-end
 - Read/write `archive` schema
-- Read ClickHouse (Silver) from any service except the export Dagster asset (Rule 2)
-- Store time series data in PostgreSQL catalog tables (Rule 3)
+- Read forge.* in ClickHouse from any service except Dagster assets (export + ops health, Rule 2)
+- Store time series data in forge.* PostgreSQL tables (Rule 3)
 - Modify DDL after Phase 0 gate passes — new metrics/sources add catalog rows only
 - Hardcode IPs — use environment variables
 

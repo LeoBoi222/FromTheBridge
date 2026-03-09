@@ -1,0 +1,57 @@
+name: Canonical Investment Data Lakehouse
+version: "1.2"  # Claude/ChatGPT synthesis: adj pipeline + failover + PII/licensing
+repo_path: ~/Home/Projects/FromTheBridge/
+description: FromTheBridge production spec (Phase 1 MVP ready)
+
+layers:
+  L1_Data_Sources:
+    vendors: [Polygon, Tiingo, FMP, FRED, Plaid]  # unchanged
+    + licensing_redistribution:
+      +   free: display only (no API/export)
+      +   pro: API w/ attribution (Polygon ok; FMP license req'd)
+      +   elite: bulk (all explicit approval)
+    + failover: Polygon outage → Tiingo EOD polling (60s)
+
+  L2_Ingestion:
+    + circuit_breaker:
+      +   lag_threshold: 30s → fallback polling
+      +   notify: X-Feed-Mode header + Elite alert
+    quality_gates: [Great Expectations, reject/quarantine sink]
+
+  L3_Lakehouse:
+    silver:
+      + bitemporal_fields:  # ChatGPT fix
+      +   valid_from TIMESTAMPTZ
+      +   valid_to TIMESTAMPTZ NULL
+      +   ingested_at TIMESTAMPTZ
+      schemas:
+        prices:
+          + adjustment_factor DECIMAL(10,6)  # Claude fix: corp actions cumulative
+        corporate_actions:
+          + cash_amount DECIMAL  # dividends
+          + new_symbol VARCHAR   # symbol changes
+        + transactions:
+          + plaid_token_status ENUM(active,revoked,expired)
+          + staleness_hours INTEGER DEFAULT 24
+          + retention: soft_delete_revoked, hard_90d
+      + adjustment_pipeline:  # Claude #1 killer
+      +   trigger: INSERT corporate_actions
+      +   action: recalculate adj_close historical (instrument scope)
+      +   idempotent: adj_factor versioned by event_date+type
+
+  L5_Serving:
+    rate_limits:
+      + elite:
+        +   api: 10k/hr (burst ok, resource governed)
+        +   backtest_queue: max_concurrent 3, max_rows 500M
+        +   billing: per_million_rows_scanned
+
+  L7_Governance:
+    + pii_controls: field_encrypt(user_id), CCPA deletion API
+    + slo_dashboards: elite 99.9%, pro 99.5%
+
+canonical_rules:
+  + 9_adjust_pipeline: corp actions → adj_close automatic
+  + 10_fallbacks: streaming → polling on failure
+  + 11_pii_lifecycle: Plaid tokens monitored/deleted
+
