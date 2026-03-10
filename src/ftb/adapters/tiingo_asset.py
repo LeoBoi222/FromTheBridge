@@ -1,6 +1,4 @@
 """Dagster Software-Defined Asset for Tiingo crypto OHLCV collection."""
-from __future__ import annotations
-
 import json
 import logging
 from datetime import date, datetime, timezone

@@ -54,7 +54,7 @@ def pg_forge_reader_resource(context: InitResourceContext):
 def minio_bronze_resource(context: InitResourceContext):
     """MinIO client for Bronze bucket writes."""
     return Minio(
-        "empire_minio:9001",
+        "minio:9001",
         access_key=_read_secret("minio_bronze_key"),
         secret_key=_read_secret("minio_bronze_secret"),
         secure=False,

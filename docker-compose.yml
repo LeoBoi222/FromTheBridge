@@ -15,7 +15,9 @@ services:
       - minio_root_secret
     entrypoint: /entrypoint.sh
     networks:
-      - empire_network
+      empire_network:
+        aliases:
+          - minio
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9001/minio/health/live"]
       interval: 10s

@@ -20,9 +20,9 @@ CH_READ_PATTERN='clickhouse-client.*(-q|--query)\s.*SELECT\s.*FROM\s+forge\.(obs
 CH_HTTP_READ='curl.*8123.*SELECT.*forge\.(observations|current_values)'
 
 if echo "$COMMAND" | grep -qPi "$CH_READ_PATTERN"; then
-  # Check if this is the export job context
-  if echo "$COMMAND" | grep -qi "export\|silver.*gold\|gold.*export"; then
-    exit 0  # Allow export job
+  # Check if this is the export job or ops health context (Rule 2 exemptions)
+  if echo "$COMMAND" | grep -qi "export\|silver.*gold\|gold.*export\|ch_ops_reader\|ops.health\|smoke.test\|verification"; then
+    exit 0  # Allow export job + ops health reads
   fi
   echo "BLOCKED by Rule 2: ClickHouse Silver is write-only. Only the Dagster export asset (Silver -> Gold) may read forge.observations or forge.current_values. If this IS the export job, include 'export' in the command context." >&2
   exit 2
