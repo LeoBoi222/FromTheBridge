@@ -4,11 +4,13 @@ Assets are registered here as adapters are built. The code server loads this mod
 via the -m flag: dagster api grpc -m ftb.definitions
 """
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import dagster
+from dagster import ScheduleDefinition, define_asset_job
 
-from ftb.adapters.tiingo_asset import collect_tiingo_price
+from ftb.adapters.tiingo_asset import collect_tiingo_price, TIINGO_PARTITIONS
 from ftb.resources import (
     ch_writer_resource,
     minio_bronze_resource,
@@ -34,8 +36,28 @@ def tiingo_api_key_resource(context):
     return os.environ.get("TIINGO_API_KEY", "")
 
 
+# Job for scheduled Tiingo collection
+tiingo_collection_job = define_asset_job(
+    name="tiingo_collection_job",
+    selection=[collect_tiingo_price],
+    partitions_def=TIINGO_PARTITIONS,
+)
+
+# Collect every 6 hours, materializing today's partition.
+# Running 4x/day ensures we catch late Tiingo updates.
+tiingo_6h_schedule = ScheduleDefinition(
+    name="tiingo_6h_collection",
+    cron_schedule="15 */6 * * *",  # :15 past every 6th hour
+    job=tiingo_collection_job,
+    execution_fn=lambda context: dagster.RunRequest(
+        partition_key=datetime.now(timezone.utc).date().isoformat(),
+    ),
+)
+
+
 defs = dagster.Definitions(
     assets=[collect_tiingo_price],
+    schedules=[tiingo_6h_schedule],
     resources={
         "ch_writer": ch_writer_resource,
         "pg_forge": pg_forge_resource,
