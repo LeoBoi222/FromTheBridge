@@ -1,0 +1,30 @@
+# Dagster instance configuration — shared by webserver, daemon, and code server.
+# Storage backend: PostgreSQL (empire_postgres, dagster database).
+
+storage:
+  postgres:
+    postgres_url:
+      env: DAGSTER_PG_URL
+
+run_launcher:
+  module: dagster.core.launcher
+  class: DefaultRunLauncher
+
+run_coordinator:
+  module: dagster.core.run_coordinator
+  class: QueuedRunCoordinator
+
+compute_logs:
+  module: dagster.core.storage.local_compute_log_manager
+  class: LocalComputeLogManager
+  config:
+    base_dir: /opt/dagster/storage/logs
+
+local_artifact_storage:
+  module: dagster.core.storage.root
+  class: LocalArtifactStorage
+  config:
+    base_dir: /opt/dagster/storage/artifacts
+
+telemetry:
+  enabled: false

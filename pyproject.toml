@@ -3,7 +3,10 @@ name = "ftb"
 version = "0.1.0"
 description = "FromTheBridge — Crypto market intelligence lakehouse"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "dagster>=1.9",
+    "dagster-postgres>=0.25",
+]
 
 [build-system]
 requires = ["hatchling"]

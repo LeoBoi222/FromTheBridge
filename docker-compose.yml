@@ -1,47 +1,131 @@
 services:
-  forge_db:
-    image: timescale/timescaledb:latest-pg16
-    container_name: empire_forge_db
+  # --- MinIO (Bronze + Gold object storage) ---
+  empire_minio:
+    image: minio/minio:latest
+    container_name: empire_minio
     restart: unless-stopped
     ports:
-      - "5435:5432"
-    environment:
-      POSTGRES_DB: empire_forge_db
-      POSTGRES_USER: forge_admin
-      POSTGRES_PASSWORD: ${FORGE_DB_PASSWORD:-qfCTPwAoGhhwKxIJuGX/fHhnaeyLTjqT6R+Poi0XaKo=}
-      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
-      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+      - "127.0.0.1:9001:9001"
+      - "127.0.0.1:9002:9002"
     volumes:
-      - forge_data:/var/lib/postgresql/data
+      - /mnt/empire-data/minio:/data
+      - ./docker/minio/entrypoint.sh:/entrypoint.sh:ro
+    secrets:
+      - minio_root_key
+      - minio_root_secret
+    entrypoint: /entrypoint.sh
     networks:
       - empire_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U forge_admin -d empire_forge_db"]
+      test: ["CMD", "curl", "-f", "http://localhost:9001/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  empire_clickhouse:
-    image: clickhouse/clickhouse-server:24.3-alpine
-    container_name: empire_clickhouse
+  # --- Dagster (orchestration — 3 services, shared image) ---
+  empire_dagster_code:
+    build:
+      context: .
+      dockerfile: docker/dagster/Dockerfile
+    container_name: empire_dagster_code
+    image: ftb-dagster:latest
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8123:8123"
-      - "127.0.0.1:9000:9000"
+    entrypoint: /opt/dagster/home/entrypoint.sh
+    command:
+      - dagster
+      - api
+      - grpc
+      - -h
+      - "0.0.0.0"
+      - -p
+      - "4266"
+      - -m
+      - ftb.definitions
     volumes:
-      - /mnt/empire-db/clickhouse/data:/var/lib/clickhouse
-      - /mnt/empire-db/clickhouse/logs:/var/log/clickhouse-server
-      - ./docker/clickhouse/config.xml:/etc/clickhouse-server/config.d/custom.xml:ro
-      - ./docker/clickhouse/users.xml:/etc/clickhouse-server/users.d/custom.xml:ro
+      - /mnt/empire-db/dagster:/opt/dagster/storage
+      - ./docker/dagster/entrypoint.sh:/opt/dagster/home/entrypoint.sh:ro
+    secrets:
+      - dagster_pg_password
+      - pg_forge_user
+      - pg_forge_reader
+      - ch_writer
+      - ch_export_reader
+      - ch_ops_reader
+      - minio_bronze_key
+      - minio_bronze_secret
     networks:
       - empire_network
-    ulimits:
-      nofile:
-        soft: 262144
-        hard: 262144
+    depends_on:
+      empire_minio:
+        condition: service_healthy
 
-volumes:
-  forge_data:
+  empire_dagster_webserver:
+    image: ftb-dagster:latest
+    container_name: empire_dagster_webserver
+    restart: unless-stopped
+    entrypoint: /opt/dagster/home/entrypoint.sh
+    command:
+      - dagster-webserver
+      - -h
+      - "0.0.0.0"
+      - -p
+      - "3010"
+      - -w
+      - /opt/dagster/home/workspace.yaml
+    ports:
+      - "127.0.0.1:3010:3010"
+    volumes:
+      - /mnt/empire-db/dagster:/opt/dagster/storage
+      - ./docker/dagster/entrypoint.sh:/opt/dagster/home/entrypoint.sh:ro
+    secrets:
+      - dagster_pg_password
+    networks:
+      - empire_network
+    depends_on:
+      - empire_dagster_code
+
+  empire_dagster_daemon:
+    image: ftb-dagster:latest
+    container_name: empire_dagster_daemon
+    restart: unless-stopped
+    entrypoint: /opt/dagster/home/entrypoint.sh
+    command:
+      - dagster-daemon
+      - run
+      - -w
+      - /opt/dagster/home/workspace.yaml
+    volumes:
+      - /mnt/empire-db/dagster:/opt/dagster/storage
+      - ./docker/dagster/entrypoint.sh:/opt/dagster/home/entrypoint.sh:ro
+    secrets:
+      - dagster_pg_password
+    networks:
+      - empire_network
+    depends_on:
+      - empire_dagster_code
+
+secrets:
+  minio_root_key:
+    file: ./secrets/minio_root_key.txt
+  minio_root_secret:
+    file: ./secrets/minio_root_secret.txt
+  dagster_pg_password:
+    file: ./secrets/dagster_pg_password.txt
+  pg_forge_user:
+    file: ./secrets/pg_forge_user.txt
+  pg_forge_reader:
+    file: ./secrets/pg_forge_reader.txt
+  ch_writer:
+    file: ./secrets/ch_writer.txt
+  ch_export_reader:
+    file: ./secrets/ch_export_reader.txt
+  ch_ops_reader:
+    file: ./secrets/ch_ops_reader.txt
+  minio_bronze_key:
+    file: ./secrets/minio_bronze_key.txt
+  minio_bronze_secret:
+    file: ./secrets/minio_bronze_secret.txt
 
 networks:
   empire_network:
+    external: true

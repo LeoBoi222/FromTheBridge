@@ -1,0 +1,8 @@
+# Dagster workspace — points to the code server (gRPC).
+# The code server runs user-defined assets from the ftb package.
+
+load_from:
+  - grpc_server:
+      host: empire_dagster_code
+      port: 4266
+      location_name: ftb

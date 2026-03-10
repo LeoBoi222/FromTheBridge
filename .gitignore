@@ -13,3 +13,6 @@ __pycache__/
 # Environment
 .env
 .env.local
+
+# Secrets (generated credentials — never commit)
+secrets/

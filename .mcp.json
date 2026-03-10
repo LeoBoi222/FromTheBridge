@@ -8,6 +8,16 @@
         "@modelcontextprotocol/server-postgres",
         "postgresql://forge_reader@192.168.68.11:5433/crypto_structured?sslmode=disable"
       ]
+    },
+    "institutional-knowledge": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/var/home/stephen/.claude/institutional-knowledge/dist/server.js"]
+    },
+    "context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
     }
   }
 }
