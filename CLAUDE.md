@@ -81,37 +81,55 @@ Data flows downward only. No layer reads a layer above itself.
 
 ## CURRENT STATE
 
-**As of:** 2026-03-10
+**As of:** 2026-03-10 (verified against live infrastructure)
 
 | Phase | Description | Status |
 |-------|-------------|--------|
 | Design | All 7 thread files complete | ✅ Complete |
 | Phase 0 | Schema Foundation | ✅ Complete |
-| Phase 1 | Data Collection | 🔧 In progress |
+| Phase 1 | Data Collection + Sync | 🔧 In progress — early |
 | Phase 2–6 | Features → Productization | ❌ Not started |
 
-**What exists (deployed on proxmox):**
-- 12 PostgreSQL catalog tables seeded (83 metrics, 10 sources, 3 instruments + `__market__`)
-- ClickHouse Silver schema (observations, dead_letter, current_values)
-- MinIO buckets (bronze-hot, bronze-archive, gold) with 90-day lifecycle on bronze-hot
-- Dagster: 3 FTB services (code/webserver/daemon) + 1 EDS code server, PG backend
-- Tiingo adapter: built in FTB (needs migration to EDS — see §Migration Notes)
-  - 29k Silver observations backfilled (2019-01-01 to 2026-03-09)
-  - 6h schedule running (`tiingo_6h_collection`)
-  - Shared writers in `src/ftb/writers/` (silver, bronze, collection)
-- EDS adapters running in shared Dagster: FRED (`fred_macro_metrics`), DeFiLlama (`defillama_defi_metrics`)
+**Deployed on proxmox (verified):**
+- PostgreSQL `forge` schema: 74 metrics, 10 sources, 4 instruments, 3 instrument_source_map rows, 3 metric_lineage rows
+- ClickHouse `forge`: 3 tables (observations, dead_letter, current_values MV)
+- MinIO: bronze-hot, bronze-archive, gold buckets exist
+- Dagster: 4 containers running (webserver, daemon, code_ftb, code_eds)
+- Tiingo adapter: running in FTB (needs migration to EDS)
+  - 2,633 collection events, 6h schedule active
+  - Shared writers in `src/ftb/writers/` — these stay for sync bridge use
+- EDS adapters in shared Dagster: FRED (3,463 obs in empire.*), DeFiLlama (936 obs in empire.*)
 
-**What's built in code (`src/ftb/`):**
-- `adapters/tiingo.py` + `tiingo_asset.py` — Tiingo OHLCV collection (to be migrated to EDS)
+**Built in code (`src/ftb/`):**
+- `adapters/tiingo.py` + `tiingo_asset.py` — to be migrated to EDS
 - `writers/silver.py`, `bronze.py`, `collection.py` — shared write utilities
-- `validation/core.py` — observation validation (metric exists, nullability, range bounds)
+- `validation/core.py` — observation validation
 - `resources.py` — Dagster resources (ClickHouse, PostgreSQL, MinIO, API keys)
-- `definitions.py` — Dagster entry point with schedule
+- `definitions.py` — Dagster entry point with Tiingo schedule
 
-**Known gaps:**
-- `empire_to_forge_sync` not yet built — this is FTB's primary Phase 1 deliverable
-- Great Expectations not yet configured
-- Tiingo adapter built in wrong repo (FTB instead of EDS) — migration needed
+**Phase 1 gate progress (40 criteria in v4.0 §Phase Gates):**
+- ✅ Dagster services healthy (3 services + EDS code server)
+- ✅ Dagster in docker-compose
+- ✅ MinIO buckets created with lifecycle
+- ⚠️ Tiingo collecting but in wrong repo (FTB, not EDS)
+- ❌ `empire_to_forge_sync` — not built (primary Phase 1 deliverable)
+- ❌ Great Expectations — not configured
+- ❌ Bronze archive job — not built
+- ❌ Export round-trip (Silver → Gold → DuckDB) — not built
+- ❌ Ops assets (adapter_health, export_health, sync_health) — not built
+- ❌ Runbooks FTB-01 through FTB-08 — not written
+- ❌ Ops credentials (calendar_writer, risk_writer, ch_ops_reader) — not created
+- ❌ Most collection sources — waiting on EDS adapters + sync bridge
+
+---
+
+## NEXT ACTIONS (Phase 1)
+
+1. Build `empire_to_forge_sync` Dagster asset — v4.0 §Sync Layer
+2. Build Bronze archive job (`bronze_cold_archive`) — v4.0 §Bronze Archive
+3. Build export round-trip (Silver → Gold via DuckDB Iceberg write) — v4.0 §Gold Layer
+4. Build ops assets (adapter_health, export_health, sync_health) — v4.0 §Solo Operator Operations
+5. Create ops credentials + calendar schema — v4.0 §Solo Operator Operations
 
 ---
 
@@ -234,13 +252,17 @@ bluefin (develop + test) → rsync → proxmox (rebuild + deploy)
 
 ---
 
-## PIPELINE DISCIPLINE
+## INFRASTRUCTURE BLOCKERS
 
-Close stale pipeline items as encountered. Every deferral gets a pipeline item with trigger condition.
+Work blocked on physical infrastructure. When a blocker clears, delete the row and build.
 
-**ID prefix conventions:** `FRG-*` (collection), `ML-*` (ML track), `LH-*` (lakehouse infra), `EDSx-*` (EDSx signal).
+| Blocker | What's Waiting | Unblocks |
+|---------|---------------|----------|
+| Server2 OS upgrade (5800X + 64GB + 2TB NVMe) | Pruned ETH failover, expanded BLC-01 storage | EDS-0 gate |
+| ai-srv-01 hardware verification (mobo M.2 slots, RAM, SSD TBW) | UTXO backfill, ML training infrastructure | Phase 4 gate |
+| Tiingo migration to EDS | FTB adapter cleanup, `empire_to_forge_sync` for Tiingo data | Phase 1 (sync bridge) |
 
-Pipeline items live in `bridge.pipeline_items` in `empire_postgres` (`system_ids` array for filtering).
+**Pipeline retired (2026-03-10).** EDS/LH/ML items cancelled from `bridge.pipeline_items` — tracked by design docs (v4.0 + EDS_design_v1.1). Nexus-Council items (B*, PL*, V*, R2) remain in pipeline for that project's use.
 
 ---
 
