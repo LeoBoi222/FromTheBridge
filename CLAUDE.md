@@ -95,28 +95,32 @@ Data flows downward only. No layer reads a layer above itself.
 - ClickHouse `forge`: 3 tables (observations, dead_letter, current_values MV)
 - MinIO: bronze-hot, bronze-archive, gold buckets exist
 - Dagster: 4 containers running (webserver, daemon, code_ftb, code_eds)
-- Tiingo adapter: running in FTB (needs migration to EDS)
-  - 2,633 collection events, 6h schedule active
-  - Shared writers in `src/ftb/writers/` — these stay for sync bridge use
+- Tiingo adapter: MIGRATED to EDS (2026-03-10). FTB adapter code removed.
+  - EDS collects via `eds_track_2_tiingo` → flows through `empire_to_forge_sync`
+  - Shared writers in `src/ftb/writers/` remain for sync bridge use
 - EDS adapters in shared Dagster: FRED (3,463 obs in empire.*), DeFiLlama (936 obs in empire.*)
 
 **Built in code (`src/ftb/`):**
-- `adapters/tiingo.py` + `tiingo_asset.py` — to be migrated to EDS
+- ~~`adapters/tiingo.py` + `tiingo_asset.py`~~ — migrated to EDS, removed from FTB
 - `writers/silver.py`, `bronze.py`, `collection.py` — shared write utilities
 - `validation/core.py` — observation validation
 - `sync/bridge.py` + `sync_asset.py` — empire_to_forge_sync (deployed, 6h schedule)
 - `resources.py` — Dagster resources (ClickHouse, PostgreSQL, MinIO, API keys, ch_empire_reader)
-- `definitions.py` — Dagster entry point with Tiingo + sync schedules
+- `archive/archive_asset.py` + `audit_asset.py` — bronze archive + expiry audit assets
+- `export/gold_export.py` — domain mapping, merge logic, anomaly guard
+- `export/gold_iceberg.py` — Gold Iceberg table management (PyIceberg)
+- `export/export_asset.py` — `gold_observations` Dagster asset (Silver → Gold)
+- `definitions.py` — Dagster entry point with sync + archive + gold export schedules
 
 **Phase 1 gate progress (40 criteria in v4.0 §Phase Gates):**
 - ✅ Dagster services healthy (3 services + EDS code server)
 - ✅ Dagster in docker-compose
 - ✅ MinIO buckets created with lifecycle
-- ⚠️ Tiingo collecting but in wrong repo (FTB, not EDS)
-- ✅ `empire_to_forge_sync` — deployed, 249 rows synced (smoke test), 6h schedule active
+- ✅ Tiingo migrated to EDS — data flows via `empire_to_forge_sync`
+- ✅ `empire_to_forge_sync` — deployed, 2,439 rows synced (FRED + Tiingo), 6h schedule active
 - ❌ Great Expectations — not configured
-- ❌ Bronze archive job — not built
-- ❌ Export round-trip (Silver → Gold → DuckDB) — not built
+- ✅ Bronze archive job — deployed, `archive_daily_schedule` at 02:00 UTC
+- ✅ Export round-trip (Silver → Gold → DuckDB) — deployed, `gold_export_hourly` at :15 past
 - ❌ Ops assets (adapter_health, export_health, sync_health) — not built
 - ❌ Runbooks FTB-01 through FTB-08 — not written
 - ❌ Ops credentials (calendar_writer, risk_writer, ch_ops_reader) — not created
@@ -127,8 +131,8 @@ Data flows downward only. No layer reads a layer above itself.
 ## NEXT ACTIONS (Phase 1)
 
 1. ~~Build `empire_to_forge_sync` Dagster asset~~ ✅ DONE (2026-03-10) — 249 rows synced, deployed, 6h schedule active
-2. Build Bronze archive job (`bronze_cold_archive`) — v4.0 §Bronze Archive
-3. Build export round-trip (Silver → Gold via DuckDB Iceberg write) — v4.0 §Gold Layer
+2. ~~Build Bronze archive job (`bronze_cold_archive`)~~ ✅ DONE (2026-03-10) — deployed, 02:00 UTC daily schedule
+3. ~~Build export round-trip (Silver → Gold via DuckDB Iceberg write)~~ ✅ DONE (2026-03-10) — 249 rows exported, hourly schedule
 4. Build ops assets (adapter_health, export_health, sync_health) — v4.0 §Solo Operator Operations
 5. Create ops credentials + calendar schema — v4.0 §Solo Operator Operations
 
@@ -261,7 +265,7 @@ Work blocked on physical infrastructure. When a blocker clears, delete the row a
 |---------|---------------|----------|
 | Server2 OS upgrade (5800X + 64GB + 2TB NVMe) | Pruned ETH failover, expanded BLC-01 storage | EDS-0 gate |
 | ai-srv-01 hardware verification (mobo M.2 slots, RAM, SSD TBW) | UTXO backfill, ML training infrastructure | Phase 4 gate |
-| Tiingo migration to EDS | FTB adapter cleanup, `empire_to_forge_sync` for Tiingo data | Phase 1 (sync bridge) |
+| ~~Tiingo migration to EDS~~ | ~~FTB adapter cleanup~~ | ✅ Complete (2026-03-10) |
 
 **Pipeline retired (2026-03-10).** EDS/LH/ML items cancelled from `bridge.pipeline_items` — tracked by design docs (v4.0 + EDS_design_v1.1). Nexus-Council items (B*, PL*, V*, R2) remain in pipeline for that project's use.
 
@@ -331,8 +335,8 @@ Phase gates are hard pass/fail. Architect confirms. Full criteria in v4.0 §Phas
 
 ## MIGRATION NOTES
 
-**Tiingo adapter (built in FTB, needs to move to EDS):**
-The Tiingo OHLCV adapter was built in `src/ftb/adapters/` but should live in EDS per the data collection boundary. Current state: 29k Silver observations in `forge.observations`, 6h schedule running. Migration plan tracked separately. The shared writers (`src/ftb/writers/`) and validation (`src/ftb/validation/`) may remain in FTB for the sync bridge.
+**Tiingo adapter: MIGRATED (2026-03-10)**
+EDS now collects Tiingo data (`eds_track_2_tiingo`). FTB adapter code removed. Price metrics (`price.spot.close_usd`, `price.spot.volume_usd_24h`) promoted to `eds_derived` source — data flows via `empire_to_forge_sync`. Historical Tiingo data in `forge.observations` with `source_id='tiingo'` remains (from pre-migration direct collection). Shared writers (`src/ftb/writers/`) and validation (`src/ftb/validation/`) remain in FTB for the sync bridge.
 
 ---
 

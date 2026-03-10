@@ -11,6 +11,8 @@ dependencies = [
     "minio>=7.2",
     "pyarrow>=15.0",
     "psycopg2-binary>=2.9",
+    "pyiceberg[s3fs]>=0.9",
+    "duckdb>=1.4",
 ]
 
 [project.optional-dependencies]
@@ -34,3 +36,9 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "ruff>=0.15.5",
+]

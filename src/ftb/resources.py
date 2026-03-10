@@ -1,12 +1,13 @@
 """Dagster resource definitions — clients for MinIO, ClickHouse, PostgreSQL."""
-from __future__ import annotations
 
 from pathlib import Path
 
 import clickhouse_connect
 import psycopg2
-from dagster import resource, InitResourceContext
+from dagster import InitResourceContext, resource
 from minio import Minio
+
+from ftb.writers.bronze import get_iceberg_catalog
 
 
 def _read_secret(name: str) -> str:
@@ -70,4 +71,75 @@ def ch_empire_reader_resource(context: InitResourceContext):
         username="ch_empire_reader",
         password=_read_secret("ch_empire_reader"),
         database="empire",
+    )
+
+
+@resource
+def minio_bronze_archive_resource(context: InitResourceContext):
+    """MinIO client for Bronze archive bucket writes."""
+    return Minio(
+        "minio:9001",
+        access_key=_read_secret("minio_bronze_archive_key"),
+        secret_key=_read_secret("minio_bronze_archive_secret"),
+        secure=False,
+    )
+
+
+@resource
+def iceberg_catalog_hot_resource(context: InitResourceContext):
+    """PyIceberg SqlCatalog for bronze-hot bucket."""
+    pg_password = _read_secret("pg_forge_user")
+    minio_key = _read_secret("minio_bronze_key")
+    minio_secret = _read_secret("minio_bronze_secret")
+    pg_uri = f"postgresql+psycopg2://forge_user:{pg_password}@empire_postgres:5432/crypto_structured?options=-csearch_path%3Diceberg_catalog"
+    return get_iceberg_catalog(
+        pg_uri=pg_uri,
+        minio_endpoint="http://minio:9001",
+        minio_access_key=minio_key,
+        minio_secret_key=minio_secret,
+        warehouse="s3://bronze-hot",
+    )
+
+
+@resource
+def iceberg_catalog_archive_resource(context: InitResourceContext):
+    """PyIceberg SqlCatalog for bronze-archive bucket."""
+    pg_password = _read_secret("pg_forge_user")
+    minio_key = _read_secret("minio_bronze_archive_key")
+    minio_secret = _read_secret("minio_bronze_archive_secret")
+    pg_uri = f"postgresql+psycopg2://forge_user:{pg_password}@empire_postgres:5432/crypto_structured?options=-csearch_path%3Diceberg_catalog"
+    return get_iceberg_catalog(
+        pg_uri=pg_uri,
+        minio_endpoint="http://minio:9001",
+        minio_access_key=minio_key,
+        minio_secret_key=minio_secret,
+        warehouse="s3://bronze-archive",
+    )
+
+
+@resource
+def ch_export_reader_resource(context: InitResourceContext):
+    """ClickHouse client with ch_export_reader credentials (SELECT-only on forge.*)."""
+    return clickhouse_connect.get_client(
+        host="empire_clickhouse",
+        port=8123,
+        username="ch_export_reader",
+        password=_read_secret("ch_export_reader"),
+        database="forge",
+    )
+
+
+@resource
+def iceberg_catalog_gold_resource(context: InitResourceContext):
+    """PyIceberg SqlCatalog for gold bucket."""
+    pg_password = _read_secret("pg_forge_user")
+    minio_key = _read_secret("minio_gold_key")
+    minio_secret = _read_secret("minio_gold_secret")
+    pg_uri = f"postgresql+psycopg2://forge_user:{pg_password}@empire_postgres:5432/crypto_structured?options=-csearch_path%3Diceberg_catalog"
+    return get_iceberg_catalog(
+        pg_uri=pg_uri,
+        minio_endpoint="http://minio:9001",
+        minio_access_key=minio_key,
+        minio_secret_key=minio_secret,
+        warehouse="s3://gold",
     )

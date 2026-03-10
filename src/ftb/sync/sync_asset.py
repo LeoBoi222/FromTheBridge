@@ -71,25 +71,37 @@ def _load_instrument_set(pg_reader) -> set[str]:
         return {row[0] for row in cur.fetchall()}
 
 
-def _load_watermark(ch_writer) -> datetime | None:
-    """Get last sync watermark from forge.observations.
+def _load_watermark(ch_writer, metric_ids: list[str]) -> datetime | None:
+    """Get sync watermark from forge.observations, aware of new metrics.
 
     Uses ch_writer which has SELECT on forge tables (per deploy setup).
-    Returns None if no eds_derived rows exist yet (first run).
+    Returns None if any promoted metric has no forge rows yet — this triggers
+    a full sync. ReplacingMergeTree deduplicates re-inserted rows.
     """
     result = ch_writer.query(
-        "SELECT max(ingested_at) FROM forge.observations WHERE source_id = 'eds_derived'"
+        "SELECT metric_id, max(ingested_at) as wm "
+        "FROM forge.observations WHERE source_id = 'eds_derived' "
+        "GROUP BY metric_id"
     )
-    row = result.result_rows[0][0] if result.result_rows else None
-    # ClickHouse returns epoch zero for empty aggregation
-    if row is None:
+    watermarks = {row[0]: row[1] for row in result.result_rows}
+
+    # If any promoted metric has no forge data, full sync needed
+    for mid in metric_ids:
+        if mid not in watermarks:
+            return None
+
+    if not watermarks:
         return None
+
+    # All metrics present — use minimum watermark so no data is missed
+    min_wm = min(watermarks[mid] for mid in metric_ids)
+
     # Normalize: CH may return naive or tz-aware datetime
-    if hasattr(row, 'tzinfo') and row.tzinfo is None:
-        row = row.replace(tzinfo=timezone.utc)
-    if row <= datetime(1970, 1, 2, tzinfo=timezone.utc):
+    if hasattr(min_wm, 'tzinfo') and min_wm.tzinfo is None:
+        min_wm = min_wm.replace(tzinfo=timezone.utc)
+    if min_wm <= datetime(1970, 1, 2, tzinfo=timezone.utc):
         return None
-    return row
+    return min_wm
 
 
 def _query_empire(ch_reader, metric_ids: list[str], watermark: datetime | None) -> list[dict]:
@@ -129,7 +141,7 @@ def empire_to_forge_sync(context: AssetExecutionContext):
     metric_ids = list(metric_catalog.keys())
 
     # 2. Read watermark from forge.observations
-    watermark = _load_watermark(context.resources.ch_writer)
+    watermark = _load_watermark(context.resources.ch_writer, metric_ids)
     context.log.info(f"Sync watermark: {watermark or 'FIRST RUN (full sync)'}")
 
     # 3. Query empire
