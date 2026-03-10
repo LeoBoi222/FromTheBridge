@@ -104,15 +104,16 @@ Data flows downward only. No layer reads a layer above itself.
 - `adapters/tiingo.py` + `tiingo_asset.py` — to be migrated to EDS
 - `writers/silver.py`, `bronze.py`, `collection.py` — shared write utilities
 - `validation/core.py` — observation validation
-- `resources.py` — Dagster resources (ClickHouse, PostgreSQL, MinIO, API keys)
-- `definitions.py` — Dagster entry point with Tiingo schedule
+- `sync/bridge.py` + `sync_asset.py` — empire_to_forge_sync (deployed, 6h schedule)
+- `resources.py` — Dagster resources (ClickHouse, PostgreSQL, MinIO, API keys, ch_empire_reader)
+- `definitions.py` — Dagster entry point with Tiingo + sync schedules
 
 **Phase 1 gate progress (40 criteria in v4.0 §Phase Gates):**
 - ✅ Dagster services healthy (3 services + EDS code server)
 - ✅ Dagster in docker-compose
 - ✅ MinIO buckets created with lifecycle
 - ⚠️ Tiingo collecting but in wrong repo (FTB, not EDS)
-- ❌ `empire_to_forge_sync` — not built (primary Phase 1 deliverable)
+- ✅ `empire_to_forge_sync` — deployed, 249 rows synced (smoke test), 6h schedule active
 - ❌ Great Expectations — not configured
 - ❌ Bronze archive job — not built
 - ❌ Export round-trip (Silver → Gold → DuckDB) — not built
@@ -125,7 +126,7 @@ Data flows downward only. No layer reads a layer above itself.
 
 ## NEXT ACTIONS (Phase 1)
 
-1. Build `empire_to_forge_sync` Dagster asset — v4.0 §Sync Layer
+1. ~~Build `empire_to_forge_sync` Dagster asset~~ ✅ DONE (2026-03-10) — 249 rows synced, deployed, 6h schedule active
 2. Build Bronze archive job (`bronze_cold_archive`) — v4.0 §Bronze Archive
 3. Build export round-trip (Silver → Gold via DuckDB Iceberg write) — v4.0 §Gold Layer
 4. Build ops assets (adapter_health, export_health, sync_health) — v4.0 §Solo Operator Operations
