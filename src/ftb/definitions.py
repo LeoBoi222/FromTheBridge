@@ -11,7 +11,9 @@ import dagster
 from dagster import ScheduleDefinition, define_asset_job
 
 from ftb.adapters.tiingo_asset import collect_tiingo_price, TIINGO_PARTITIONS
+from ftb.sync.sync_asset import empire_to_forge_sync
 from ftb.resources import (
+    ch_empire_reader_resource,
     ch_writer_resource,
     minio_bronze_resource,
     pg_forge_resource,
@@ -55,11 +57,25 @@ tiingo_6h_schedule = ScheduleDefinition(
 )
 
 
+# Job + schedule for empire_to_forge_sync (unpartitioned, cursor-based)
+sync_job = define_asset_job(
+    name="empire_to_forge_sync_job",
+    selection=[empire_to_forge_sync],
+)
+
+sync_6h_schedule = ScheduleDefinition(
+    name="empire_to_forge_sync_6h",
+    cron_schedule="30 */6 * * *",  # :30 past every 6th hour (offset from Tiingo at :15)
+    job=sync_job,
+)
+
+
 defs = dagster.Definitions(
-    assets=[collect_tiingo_price],
-    schedules=[tiingo_6h_schedule],
+    assets=[collect_tiingo_price, empire_to_forge_sync],
+    schedules=[tiingo_6h_schedule, sync_6h_schedule],
     resources={
         "ch_writer": ch_writer_resource,
+        "ch_empire_reader": ch_empire_reader_resource,
         "pg_forge": pg_forge_resource,
         "pg_forge_reader": pg_forge_reader_resource,
         "minio_bronze": minio_bronze_resource,
