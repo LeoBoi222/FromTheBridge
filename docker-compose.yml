@@ -56,6 +56,7 @@ services:
       - minio_bronze_key
       - minio_bronze_secret
       - tiingo_api_key
+      - ch_empire_reader
     networks:
       - empire_network
     depends_on:
@@ -130,6 +131,8 @@ secrets:
     file: ./secrets/minio_bronze_secret.txt
   tiingo_api_key:
     file: ./secrets/external_apis/tiingo.txt
+  ch_empire_reader:
+    file: ./secrets/ch_empire_reader.txt
 
 networks:
   empire_network:

@@ -59,3 +59,15 @@ def minio_bronze_resource(context: InitResourceContext):
         secret_key=_read_secret("minio_bronze_secret"),
         secure=False,
     )
+
+
+@resource
+def ch_empire_reader_resource(context: InitResourceContext):
+    """ClickHouse client with ch_empire_reader credentials (SELECT-only on empire.*)."""
+    return clickhouse_connect.get_client(
+        host="empire_clickhouse",
+        port=8123,
+        username="ch_empire_reader",
+        password=_read_secret("ch_empire_reader"),
+        database="empire",
+    )
