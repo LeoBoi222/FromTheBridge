@@ -71,6 +71,27 @@ def _load_instrument_set(pg_reader) -> set[str]:
         return {row[0] for row in cur.fetchall()}
 
 
+def _load_watermark(ch_writer) -> datetime | None:
+    """Get last sync watermark from forge.observations.
+
+    Uses ch_writer which has SELECT on forge tables (per deploy setup).
+    Returns None if no eds_derived rows exist yet (first run).
+    """
+    result = ch_writer.query(
+        "SELECT max(ingested_at) FROM forge.observations WHERE source_id = 'eds_derived'"
+    )
+    row = result.result_rows[0][0] if result.result_rows else None
+    # ClickHouse returns epoch zero for empty aggregation
+    if row is None:
+        return None
+    # Normalize: CH may return naive or tz-aware datetime
+    if hasattr(row, 'tzinfo') and row.tzinfo is None:
+        row = row.replace(tzinfo=timezone.utc)
+    if row <= datetime(1970, 1, 2, tzinfo=timezone.utc):
+        return None
+    return row
+
+
 def _query_empire(ch_reader, metric_ids: list[str], watermark: datetime | None) -> list[dict]:
     """Query empire.observations for promoted metrics since watermark."""
     sql, params = build_empire_query(metric_ids, watermark)
@@ -87,7 +108,8 @@ def _query_empire(ch_reader, metric_ids: list[str], watermark: datetime | None) 
 def empire_to_forge_sync(context: AssetExecutionContext):
     """Sync promoted metrics from empire.observations to forge.observations.
 
-    Incremental: uses Dagster cursor to track last ingested_at watermark.
+    Incremental: watermark derived from max(ingested_at) in forge.observations
+    for source_id='eds_derived'. Self-healing — no external cursor state.
     """
     started_at = datetime.now(timezone.utc)
 
@@ -106,9 +128,8 @@ def empire_to_forge_sync(context: AssetExecutionContext):
     instrument_set = _load_instrument_set(context.resources.pg_forge_reader)
     metric_ids = list(metric_catalog.keys())
 
-    # 2. Read watermark
-    cursor_str = context.cursor
-    watermark = datetime.fromisoformat(cursor_str) if cursor_str else None
+    # 2. Read watermark from forge.observations
+    watermark = _load_watermark(context.resources.ch_writer)
     context.log.info(f"Sync watermark: {watermark or 'FIRST RUN (full sync)'}")
 
     # 3. Query empire
@@ -146,10 +167,8 @@ def empire_to_forge_sync(context: AssetExecutionContext):
         instruments_covered=list({o.instrument_id for o in valid_obs if o.instrument_id}),
     )
 
-    # 8. Update watermark to max ingested_at from batch
+    # 8. Report watermark (derived from forge.observations, not stored externally)
     max_ingested = max(row["ingested_at"] for row in rows)
-    context.update_cursor(max_ingested.isoformat())
-    context.log.info(f"Updated watermark to {max_ingested.isoformat()}")
 
     return Output(
         value=None,
