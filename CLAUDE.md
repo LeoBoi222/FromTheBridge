@@ -130,6 +130,8 @@ Data flows downward only. No layer reads a layer above itself.
 - ✅ Ops credentials (calendar_writer, risk_writer, ch_ops_reader) — created and verified
 - ✅ Calendar schema — event_calendar extended (system_id, severity, metadata, expires_at, recurring_rule, 14 event types)
 - ✅ NAS backup job — `scripts/ftb_backup.sh` (Dagster metadata DB + MinIO Bronze/Gold, GPG AES-256, 30-day retention)
+- ✅ Historical depth — `backfill_depth_days` populated for all 74 active metrics
+- ✅ Training window viability — `.claude/reports/T5_training_windows.json` (3 ready, 2 conditional, 0 blocked)
 - ❌ Most collection sources — waiting on EDS adapters + sync bridge
 
 ---
@@ -137,10 +139,8 @@ Data flows downward only. No layer reads a layer above itself.
 ## NEXT ACTIONS (Phase 1)
 
 Remaining FTB-buildable work (not blocked on EDS):
-1. Historical depth (`backfill_depth_days`) populated in metric_catalog
-5. Training window viability report
-6. C2 archive credentials isolation (`MINIO_BRONZE_ARCHIVE_USER`)
-7. C2 reprocessing test (end-to-end path verification)
+1. C2 archive credentials isolation (`MINIO_BRONZE_ARCHIVE_USER`)
+2. C2 reprocessing test (end-to-end path verification)
 
 Blocked on EDS: Most collection sources (all 11 sources need Silver rows via `empire_to_forge_sync`). BLC-01 downstream pipeline (file sensor → aggregation → `empire.observations`) is an EDS responsibility.
 

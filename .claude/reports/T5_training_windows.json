@@ -1,0 +1,128 @@
+{
+  "report_date": "2026-03-12",
+  "methodology": "Cross-reference ML training window requirements (v4.0 §T3b) against backfill_depth_days in forge.metric_catalog and source data availability (T3_api_depth.json audit). Floor dates from T3b audit findings.",
+  "gate_status": "PASS — all 5 models have viable training windows",
+  "models": {
+    "derivatives_pressure": {
+      "floor_date": "2022-02",
+      "window_years": 4.1,
+      "walk_forward_folds": 6,
+      "status": "ready",
+      "required_metrics": [
+        "derivatives.perpetual.funding_rate",
+        "derivatives.perpetual.open_interest_usd",
+        "derivatives.perpetual.open_interest_change_usd",
+        "derivatives.perpetual.long_short_ratio",
+        "derivatives.perpetual.liquidations_long_usd",
+        "derivatives.perpetual.liquidations_short_usd",
+        "derivatives.perpetual.cumulative_volume_delta",
+        "derivatives.perpetual.perp_basis"
+      ],
+      "backfill_depth_days": 1825,
+      "bottleneck": "Coinalyze pre-Feb-2022 degraded (OI at 3.4%). Effective floor = Feb 2022.",
+      "blc01_note": "BLC-01 tick liquidations EXCLUDED from initial training. Use Coinalyze aggregated. BLC-01 becomes ML-relevant ~Jul 2027 (450 days accumulated).",
+      "row_count_estimate": 283000
+    },
+    "capital_flow_direction": {
+      "floor_date": "2020-05",
+      "window_years": 5.8,
+      "walk_forward_folds": 10,
+      "status": "conditional",
+      "conditions": [
+        "Etherscan backfill complete",
+        "NVT proxy decision finalized (CoinMetrics transfer_volume vs Etherscan-derived)"
+      ],
+      "required_metrics": [
+        "flows.exchange.inflow_usd",
+        "flows.exchange.outflow_usd",
+        "flows.exchange.net_flow_usd",
+        "flows.exchange.reserve_proxy_usd",
+        "flows.whale.transaction_count",
+        "flows.whale.net_direction",
+        "chain.activity.transfer_volume_usd",
+        "chain.activity.nvt_proxy"
+      ],
+      "backfill_depth_days": 2920,
+      "bottleneck": "Etherscan backfill is 24-48h at free tier. NVT depends on CoinMetrics redistribution or Etherscan-derived alternative.",
+      "row_count_estimate": 150000
+    },
+    "macro_regime": {
+      "floor_date": "2014-01",
+      "window_years": 12.2,
+      "walk_forward_folds": 25,
+      "status": "ready",
+      "conditions": [
+        "Add 3 FRED series (already available, need EDS adapter registration)"
+      ],
+      "required_metrics": [
+        "macro.rates.fed_funds_effective",
+        "macro.rates.yield_10y",
+        "macro.rates.yield_2y",
+        "macro.rates.yield_spread_10y2y",
+        "macro.inflation.cpi",
+        "macro.liquidity.m2",
+        "macro.liquidity.fed_balance_sheet",
+        "macro.volatility.vix",
+        "macro.equity.sp500",
+        "macro.fx.dxy",
+        "macro.credit.hy_oas"
+      ],
+      "backfill_depth_days": 4450,
+      "bottleneck": "None — FRED data goes back decades. DXY (DTWEXBGS) starts 2006, post-floor.",
+      "row_count_estimate": 50000
+    },
+    "defi_stress": {
+      "floor_date": "2020-05",
+      "window_years": 5.8,
+      "walk_forward_folds": 10,
+      "status": "conditional",
+      "conditions": [
+        "DeFiLlama lending re-sourced (fees + yields endpoint)",
+        "Stablecoin supply re-sourced via DeFiLlama"
+      ],
+      "required_metrics": [
+        "defi.aggregate.tvl_usd",
+        "defi.dex.volume_usd_24h",
+        "defi.dex.volume_to_tvl_ratio",
+        "defi.lending.supply_apy",
+        "defi.lending.borrow_apy",
+        "defi.lending.utilization_rate",
+        "stablecoin.supply.total_usd",
+        "stablecoin.peg.deviation"
+      ],
+      "backfill_depth_days": 2190,
+      "bottleneck": "DeFiLlama lending started mid-2021 — 6 months after floor. Lending features sparse for first 6 months of window.",
+      "row_count_estimate": 80000
+    },
+    "volatility_regime": {
+      "floor_date": "2014-01",
+      "window_years": 12.2,
+      "walk_forward_folds": 25,
+      "status": "ready",
+      "required_metrics": [
+        "macro.volatility.vix",
+        "macro.rates.move_index",
+        "price.spot.close_usd",
+        "price.spot.volume_usd_24h",
+        "derivatives.perpetual.open_interest_usd"
+      ],
+      "backfill_depth_days": 4450,
+      "bottleneck": "Derivatives features only available from 2021-03 — model uses price-only features before that date.",
+      "row_count_estimate": 60000
+    }
+  },
+  "summary": {
+    "ready": ["derivatives_pressure", "macro_regime", "volatility_regime"],
+    "conditional": ["capital_flow_direction", "defi_stress"],
+    "blocked": [],
+    "total_estimated_rows": 623000,
+    "earliest_floor": "2014-01",
+    "latest_floor": "2022-02",
+    "key_risks": [
+      "CoinMetrics redistribution blocked — NVT proxy depends on alternative source",
+      "DeFiLlama lending history starts mid-2021, creating sparse window for DeFi Stress model",
+      "Coinalyze pre-2022 data quality degraded — do not extend derivatives floor backward",
+      "BLC-01 excluded from ML until Jul 2027 (insufficient history)"
+    ]
+  }
+}
