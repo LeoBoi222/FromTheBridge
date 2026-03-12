@@ -58,7 +58,7 @@ class TestFullSyncPath:
         assert len(observations) == 2  # 3rd row filtered (not promoted)
 
         # Validate + split
-        valid, dead = validate_and_split(observations, METRIC_CATALOG, INSTRUMENT_SET)
+        valid, dead, _ = validate_and_split(observations, METRIC_CATALOG, INSTRUMENT_SET)
 
         # BTC-USD row is valid, __market__ mapped to None is also valid (market-level)
         assert len(valid) == 2

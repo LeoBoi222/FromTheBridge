@@ -4,46 +4,27 @@ Reads empire.observations for promoted metrics, validates against
 forge.metric_catalog, writes to forge.observations with source_id='eds_derived'.
 Uses cursor-based incremental sync (watermark on ingested_at).
 """
-import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from dagster import asset, AssetExecutionContext, Output, MetadataValue
+from dagster import AssetExecutionContext, MetadataValue, Output, asset
 
-from ftb.sync.bridge import map_empire_to_forge, build_empire_query
-from ftb.validation.core import Observation, validate_observation
-from ftb.writers.silver import DeadLetterRow, write_observations, write_dead_letter
+from ftb.sync.bridge import build_empire_query, map_empire_to_forge
+from ftb.validation.core import Observation
+from ftb.validation.expectations import validate_with_ge
 from ftb.writers.collection import write_collection_event
+from ftb.writers.silver import DeadLetterRow, write_dead_letter, write_observations
 
 
 def validate_and_split(
     observations: list[Observation],
     metric_catalog: dict[str, dict],
     instrument_set: set[str],
-) -> tuple[list[Observation], list[DeadLetterRow]]:
-    """Validate observations and split into valid + dead letter lists."""
-    valid = []
-    dead = []
-    for obs in observations:
-        result = validate_observation(obs, metric_catalog, instrument_set)
-        if result.is_valid:
-            valid.append(obs)
-        else:
-            dead.append(
-                DeadLetterRow(
-                    source_id=obs.source_id,
-                    metric_id=obs.metric_id,
-                    instrument_id=obs.instrument_id,
-                    raw_payload=json.dumps({
-                        "metric_id": obs.metric_id,
-                        "instrument_id": obs.instrument_id,
-                        "value": obs.value,
-                        "observed_at": obs.observed_at.isoformat(),
-                    }),
-                    rejection_reason=result.rejection_reason or "",
-                    rejection_code=result.rejection_code or "",
-                )
-            )
-    return valid, dead
+) -> tuple[list[Observation], list[DeadLetterRow], dict]:
+    """Validate observations using Great Expectations and split into valid + dead letter.
+
+    Returns (valid_observations, dead_letter_rows, checkpoint_summary).
+    """
+    return validate_with_ge(observations, metric_catalog, instrument_set)
 
 
 def _load_promoted_metrics(pg_reader) -> dict[str, dict]:
@@ -98,8 +79,8 @@ def _load_watermark(ch_writer, metric_ids: list[str]) -> datetime | None:
 
     # Normalize: CH may return naive or tz-aware datetime
     if hasattr(min_wm, 'tzinfo') and min_wm.tzinfo is None:
-        min_wm = min_wm.replace(tzinfo=timezone.utc)
-    if min_wm <= datetime(1970, 1, 2, tzinfo=timezone.utc):
+        min_wm = min_wm.replace(tzinfo=UTC)
+    if min_wm <= datetime(1970, 1, 2, tzinfo=UTC):
         return None
     return min_wm
 
@@ -123,7 +104,7 @@ def empire_to_forge_sync(context: AssetExecutionContext):
     Incremental: watermark derived from max(ingested_at) in forge.observations
     for source_id='eds_derived'. Self-healing — no external cursor state.
     """
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
 
     # 1. Load catalog
     metric_catalog = _load_promoted_metrics(context.resources.pg_forge_reader)
@@ -159,8 +140,8 @@ def empire_to_forge_sync(context: AssetExecutionContext):
     # 4. Map to forge Observations
     observations = map_empire_to_forge(rows, set(metric_ids))
 
-    # 5. Validate + split
-    valid_obs, dead_letters = validate_and_split(observations, metric_catalog, instrument_set)
+    # 5. Validate + split (GE-powered)
+    valid_obs, dead_letters, checkpoint = validate_and_split(observations, metric_catalog, instrument_set)
     context.log.info(f"Valid: {len(valid_obs)}, Dead letter: {len(dead_letters)}")
 
     # 6. Write Silver
@@ -191,5 +172,6 @@ def empire_to_forge_sync(context: AssetExecutionContext):
             "metrics_synced": MetadataValue.text(
                 ", ".join(sorted({o.metric_id for o in valid_obs}))
             ),
+            "ge_checkpoint": MetadataValue.text(str(checkpoint)),
         },
     )
