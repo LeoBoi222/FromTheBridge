@@ -13,6 +13,7 @@ dependencies = [
     "psycopg2-binary>=2.9",
     "pyiceberg[s3fs]>=0.9",
     "duckdb>=1.4",
+    "great-expectations>=1.15.0",
 ]
 
 [project.optional-dependencies]
