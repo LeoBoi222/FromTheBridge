@@ -1478,6 +1478,9 @@ the float.
 | Short liquidations 24h | `derivatives.perpetual.liquidations_short_usd` | cumsum | 24h |
 | Net liquidation direction | derived (long - short) | value | 1 period |
 | Liquidation imbalance | derived (net / total, signed) | value | 1 period |
+| Liquidation count zscore | `derivatives.perpetual.liquidation_count` | zscore | 24h |
+| Liquidation L/S ratio | `derivatives.perpetual.liquidation_ls_ratio` | value | 1 period |
+| Liquidation L/S ratio MA | `derivatives.perpetual.liquidation_ls_ratio` | ma | 24h |
 | Liquidation zscore | derived net_liquidation | zscore | 30d |
 | Perpetual basis | derived (perp_price - spot) / spot | value | 1 period |
 | Perpetual basis MA | perp_basis | ma | 7d |
@@ -2079,10 +2082,10 @@ LIMIT 1;
 
 **Authoritative specification.** The table below IS the Phase 0 seed — 72 metrics
 across 9 domains. The corrective migration (`0004_phase0_corrective.sql`) implements
-this table character-for-character. Phase 1 additions = 9 metrics (2 DeFi protocol +
-4 CFTC COT + 2 derived + 1 NVT proxy). Total at Phase 1 completion = 83.
+this table character-for-character. Phase 1 additions = 11 metrics (2 DeFi protocol +
+4 CFTC COT + 2 derived + 1 NVT proxy + 2 BLC-01). Total at Phase 1 completion = 85.
 
-**Domain breakdown:** Derivatives 9, Flows 8, ETF 5, Stablecoin 4, DeFi 11,
+**Domain breakdown:** Derivatives 11, Flows 8, ETF 5, Stablecoin 4, DeFi 11,
 Chain 6, Macro 23, Price 4, Metadata 4.
 
 **Renames applied (13 metrics):** `flows.stablecoin.*` → `stablecoin.*`,
@@ -2094,8 +2097,10 @@ the `domain` column CHECK constraint.
 | derivatives.perpetual.funding_rate | derivatives | perpetual | Perpetual Funding Rate | rate | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
 | derivatives.perpetual.open_interest_usd | derivatives | perpetual | Perpetual Open Interest (USD) | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
 | derivatives.perpetual.open_interest_change_usd | derivatives | perpetual | Perpetual OI Change (USD, derived) | usd | numeric | per_instrument | 8 hours | 16 hours | false | open_interest_usd[t] - open_interest_usd[t-1] | {coinalyze} | active |
-| derivatives.perpetual.liquidations_long_usd | derivatives | perpetual | Perpetual Liquidations Long (USD) | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
-| derivatives.perpetual.liquidations_short_usd | derivatives | perpetual | Perpetual Liquidations Short (USD) | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
+| derivatives.perpetual.liquidations_long_usd | derivatives | perpetual | Perpetual Liquidations Long (USD) | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze,binance_blc01} | active |
+| derivatives.perpetual.liquidations_short_usd | derivatives | perpetual | Perpetual Liquidations Short (USD) | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze,binance_blc01} | active |
+| derivatives.perpetual.liquidation_count | derivatives | perpetual | Liquidation Event Count (1h bucket) | count | numeric | per_instrument | 1 hour | 2 hours | false | COUNT(*) per 1h bucket | {binance_blc01} | active |
+| derivatives.perpetual.liquidation_ls_ratio | derivatives | perpetual | Liquidation Long/Short Ratio | ratio | numeric | per_instrument | 1 hour | 2 hours | true | long_usd / short_usd; NULL when short_usd = 0 | {binance_blc01} | active |
 | derivatives.perpetual.perp_basis | derivatives | perpetual | Perpetual Basis (derived) | pct | numeric | per_instrument | 8 hours | 16 hours | false | (perp_price - spot_price) / spot_price | {} | active |
 | derivatives.perpetual.long_short_ratio | derivatives | perpetual | Long/Short Ratio | ratio | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
 | derivatives.perpetual.cumulative_volume_delta | derivatives | perpetual | Cumulative Volume Delta | usd | numeric | per_instrument | 8 hours | 16 hours | false | | {coinalyze} | active |
@@ -2807,20 +2812,55 @@ Binance WS (live)
     → JSONL files (rolling, local storage)
       → rsync to proxmox landing directory
         → Dagster file sensor detects new files
-          → Bronze adapter aggregates 8h, writes Iceberg to MinIO
+          → Bronze adapter aggregates 1h buckets, writes Iceberg to MinIO
             → Great Expectations validation
               → Silver adapter writes to ClickHouse
 ```
+**Field mappings (tick → 1h aggregation):**
+
+Each `.complete` JSONL file contains Binance `forceOrder` events. Per-event fields:
+
+| Event field | Path | Description |
+|---|---|---|
+| `o.s` | symbol | Trading pair (e.g. `BTCUSDT`) |
+| `o.S` | side | `BUY` = short liquidation (forced buy to close), `SELL` = long liquidation (forced sell to close) |
+| `o.z` | filled qty | Filled quantity (string, parse to float) |
+| `o.ap` | avg price | Average fill price (string, parse to float) |
+| `o.T` | trade time | Unix ms timestamp |
+| `_received_at` | receipt | ISO 8601 wall-clock receipt time (added by collector) |
+
+USD notional per event = `float(o.z) × float(o.ap)`.
+
+**Aggregation outputs (1h buckets, per instrument):**
+
+| Aggregation | Canonical metric | Computation |
+|---|---|---|
+| Long liquidation volume | `derivatives.perpetual.liquidations_long_usd` | SUM(notional) WHERE side=SELL, per 1h bucket |
+| Short liquidation volume | `derivatives.perpetual.liquidations_short_usd` | SUM(notional) WHERE side=BUY, per 1h bucket |
+| Liquidation event count | `derivatives.perpetual.liquidation_count` | COUNT(*) per 1h bucket |
+| Long/short liquidation ratio | `derivatives.perpetual.liquidation_ls_ratio` | long_usd / short_usd per 1h bucket. NULL when short_usd = 0. |
+
+`liquidations_long_usd` and `liquidations_short_usd` are existing metrics also sourced by
+Coinalyze (8h cadence). BLC-01 writes the same metric_ids with `source_id = 'binance_blc01'`
+at 1h cadence — the EAV model distinguishes by source. `liquidation_count` and
+`liquidation_ls_ratio` are BLC-01-only metrics that Coinalyze cannot provide.
+
+**Instrument mapping:** BLC-01 symbols (e.g. `BTCUSDT`) map to FTB instruments via
+suffix stripping (`BTCUSDT` → `BTC`). Only events for instruments in
+`forge.instrument_catalog` are written to Silver; others are written to Bronze only.
+
 **BLC-01 integration (Option B — approved):** Keep collector on Server2, implement
 hourly rsync pipeline:
-- Schedule: every 1 hour
-- Command: `rsync -av root@192.168.68.12:/data/liquidations/*.jsonl.complete /opt/empire/blc01/landing/`
+- Schedule: every 1 hour (cron at :15)
+- Command: `rsync -av root@192.168.68.12:/data/liquidations/*.jsonl.complete /data/eds/blc-01/liquidations/`
 - Only sync `.complete` files (avoids partial reads of active day file)
-- Proxmox landing dir: `/opt/empire/blc01/landing/`
+- Proxmox landing dir: `/data/eds/blc-01/liquidations/`
+- Staging + validation: `/data/eds/blc-01/staging/` with per-file validation + checksums
 - Bronze write: Iceberg `bronze-hot`
 - Silver write: Aggregation windowing (tick → 1h buckets) → ClickHouse `forge.observations`
 - NAS backup: Daily rsync from proxmox landing to NAS
 - Phase 1 gate: ≥7 `.complete` files in proxmox landing directory
+- **Status:** rsync pull operational (2026-03-11). 9 `.complete` files landed + validated.
 
 **Note:** Every day without rsync configured risks irrecoverable data loss. This is
 a P0 Phase 1 action.
@@ -2839,7 +2879,7 @@ a P0 Phase 1 action.
 | BGeometrics | No | Build during adapter implementation |
 | CoinMetrics | No | Build during adapter implementation |
 | Etherscan/Explorer | No | Build during adapter implementation |
-| Binance BLC-01 | No | Build during adapter implementation |
+| Binance BLC-01 | Yes (6 event fields → 4 metrics) | Complete |
 
 ### Source Gap Analysis
 

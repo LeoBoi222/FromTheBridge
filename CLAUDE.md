@@ -103,7 +103,8 @@ Data flows downward only. No layer reads a layer above itself.
 **Built in code (`src/ftb/`):**
 - ~~`adapters/tiingo.py` + `tiingo_asset.py`~~ — migrated to EDS, removed from FTB
 - `writers/silver.py`, `bronze.py`, `collection.py` — shared write utilities
-- `validation/core.py` — observation validation
+- `validation/core.py` — per-observation validation (retained for unit-level use)
+- `validation/expectations.py` — GE bronze_core suite (8 expectations), batch validation, dead letter mapping
 - `sync/bridge.py` + `sync_asset.py` — empire_to_forge_sync (deployed, 6h schedule)
 - `resources.py` — Dagster resources (ClickHouse, PostgreSQL, MinIO, API keys, ch_empire_reader, ch_ops_reader)
 - `archive/archive_asset.py` + `audit_asset.py` — bronze archive + expiry audit assets
@@ -122,12 +123,13 @@ Data flows downward only. No layer reads a layer above itself.
 - ✅ MinIO buckets created with lifecycle
 - ✅ Tiingo migrated to EDS — data flows via `empire_to_forge_sync`
 - ✅ `empire_to_forge_sync` — deployed, 2,439 rows synced (FRED + Tiingo), 6h schedule active
-- ❌ Great Expectations — not configured
+- ✅ Great Expectations — bronze_core suite (8 expectations), deployed, checkpoint in asset metadata
 - ✅ Bronze archive job — deployed, `archive_daily_schedule` at 02:00 UTC
 - ✅ Export round-trip (Silver → Gold → DuckDB) — deployed, `gold_export_hourly` at :15 past
 - ✅ Ops assets — deployed, `ops_health_30m` schedule every 30 minutes
 - ❌ Runbooks FTB-01 through FTB-08 — not written
-- ❌ Ops credentials (calendar_writer, risk_writer, ch_ops_reader) — not created
+- ✅ Ops credentials (calendar_writer, risk_writer, ch_ops_reader) — created and verified
+- ✅ BLC-01 rsync — hourly cron, 9 `.complete` files validated + accepted in `/data/eds/blc-01/liquidations/`
 - ❌ Most collection sources — waiting on EDS adapters + sync bridge
 
 ---
