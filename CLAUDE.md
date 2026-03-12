@@ -39,7 +39,6 @@ External APIs → EDS adapters → empire.observations → empire_to_forge_sync 
 1. `empire_to_forge_sync` — the Dagster asset that reads `empire.observations` and writes to `forge.observations` with `source_id='eds_derived'`
 2. `forge.metric_catalog` rows — manual promotion of EDS metrics into the FTB catalog
 3. Validation + dead letter at the sync boundary
-4. BLC-01 rsync pull (Server2 → proxmox landing directory) — ops task, not an adapter
 
 **If you think FTB needs to build an adapter: STOP. Check EDS first.**
 
@@ -91,7 +90,7 @@ Data flows downward only. No layer reads a layer above itself.
 | Phase 2–6 | Features → Productization | ❌ Not started |
 
 **Deployed on proxmox (verified):**
-- PostgreSQL `forge` schema: 74 metrics (72 seed + 2 EDGAR), 10 sources + eds_derived (SoSoValue→SEC EDGAR swap), 4 instruments, 3 instrument_source_map rows, 3 metric_lineage rows
+- PostgreSQL `forge` schema: 76 metrics (72 seed + 2 EDGAR + 2 BLC-01), 10 sources + eds_derived (SoSoValue→SEC EDGAR swap), 4 instruments, 3 instrument_source_map rows, 3 metric_lineage rows
 - ClickHouse `forge`: 3 tables (observations, dead_letter, current_values MV)
 - MinIO: bronze-hot, bronze-archive, gold buckets exist
 - Dagster: 4 containers running (webserver, daemon, code_ftb, code_eds)
@@ -129,18 +128,22 @@ Data flows downward only. No layer reads a layer above itself.
 - ✅ Ops assets — deployed, `ops_health_30m` schedule every 30 minutes
 - ❌ Runbooks FTB-01 through FTB-08 — not written
 - ✅ Ops credentials (calendar_writer, risk_writer, ch_ops_reader) — created and verified
-- ✅ BLC-01 rsync — hourly cron, 9 `.complete` files validated + accepted in `/data/eds/blc-01/liquidations/`
 - ❌ Most collection sources — waiting on EDS adapters + sync bridge
 
 ---
 
 ## NEXT ACTIONS (Phase 1)
 
-1. ~~Build `empire_to_forge_sync` Dagster asset~~ ✅ DONE (2026-03-10) — 249 rows synced, deployed, 6h schedule active
-2. ~~Build Bronze archive job (`bronze_cold_archive`)~~ ✅ DONE (2026-03-10) — deployed, 02:00 UTC daily schedule
-3. ~~Build export round-trip (Silver → Gold via DuckDB Iceberg write)~~ ✅ DONE (2026-03-10) — 249 rows exported, hourly schedule
-4. ~~Build ops assets (adapter_health, export_health, sync_health)~~ ✅ DONE (2026-03-10) — deployed, 30m schedule
-5. Create ops credentials + calendar schema — v4.0 §Solo Operator Operations
+Remaining FTB-buildable work (not blocked on EDS):
+1. Runbooks FTB-01 through FTB-08
+2. Calendar schema (event calendar extension) — v4.0 §Solo Operator Operations
+3. NAS backup job for MinIO + Dagster metadata DB
+4. Historical depth (`backfill_depth_days`) populated in metric_catalog
+5. Training window viability report
+6. C2 archive credentials isolation (`MINIO_BRONZE_ARCHIVE_USER`)
+7. C2 reprocessing test (end-to-end path verification)
+
+Blocked on EDS: Most collection sources (all 11 sources need Silver rows via `empire_to_forge_sync`). BLC-01 downstream pipeline (file sensor → aggregation → `empire.observations`) is an EDS responsibility.
 
 ---
 
@@ -159,7 +162,7 @@ All sources are collected by EDS adapters and flow to FTB via `empire_to_forge_s
 | CoinPaprika | Market cap, metadata | 24h | EDS Track 3 | empire_to_forge_sync |
 | CoinMetrics | On-chain transfer volume | 24h | EDS Track 1 | empire_to_forge_sync |
 | BGeometrics | MVRV, SOPR, NUPL, Puell | 24h | EDS Track 1 | empire_to_forge_sync |
-| Binance BLC-01 | Tick liquidations | Real-time | EDS (Server2) | BLC-01 rsync + sync |
+| Binance BLC-01 | Tick liquidations | Real-time | EDS (Server2) | empire_to_forge_sync |
 | CFTC COT | COT positioning | Weekly | EDS Track 3 | empire_to_forge_sync |
 
 **Redistribution blocked:** CoinMetrics. Excluded from external products until flags changed.
@@ -298,7 +301,7 @@ Phase gates are hard pass/fail. Architect confirms. Full criteria in v4.0 §Phas
 | Phase | Key Gate Criteria |
 |-------|-------------------|
 | 0 — Schema | 12 PG tables, CH Silver schema, MinIO buckets, ≥50 metrics seeded, PIT query, redistribution flags |
-| 1 — Collection | Dagster healthy, `empire_to_forge_sync` flowing data, all 11 sources have Silver rows (via EDS sync), Bronze exists, GE checkpoint, dead letter captures, BLC-01 rsync, credential isolation |
+| 1 — Collection | Dagster healthy, `empire_to_forge_sync` flowing data, all 11 sources have Silver rows (via EDS sync), Bronze exists, GE checkpoint, dead letter captures, credential isolation |
 | 2 — Features | Gold Iceberg readable by DuckDB, dbt models pass, forge_compute produces features, PIT audit |
 | 3 — EDSx | All 5 pillars scoring, confidence, regime classification |
 | 4 — ML | 5 models trained (walk-forward), graduation criteria, ≥30 day shadow |
