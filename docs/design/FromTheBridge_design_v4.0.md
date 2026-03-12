@@ -145,9 +145,9 @@ Layer 1: Orchestration
   as framework primitives. BLC-01: file-sensor trigger.
 
 Layer 0: Sources
-  Coinalyze, CFTC COT, DeFiLlama, FRED, Tiingo, SoSoValue,
+  Coinalyze, CFTC COT, DeFiLlama, FRED, Tiingo, SEC EDGAR,
   Etherscan/Explorer, CoinPaprika, BGeometrics, CoinMetrics,
-  Binance (BLC-01). 11 sources at v1.
+  Binance (BLC-01). 10 sources at v1 + eds_derived.
 ```
 
 ### Sibling Project: Empire Data Services (EDS)
@@ -174,6 +174,13 @@ asset (`empire_to_forge_sync`, 6h cadence). The sync writes with
 
 The sync is one-directional: empire → forge. FTB never reads `empire.*` directly.
 EDS never reads `forge.*` directly. Credential isolation enforces both boundaries.
+
+**Watermark strategy — query-based, not cursor-based:** The sync asset derives its
+watermark from `MAX(ingested_at) FROM forge.observations WHERE source_id =
+'eds_derived'`. Dagster's `AssetExecutionContext.cursor` API is for sensors only —
+assets cannot use it. The query-based approach is self-healing: no external cursor
+state to corrupt, no metadata dependency. If the Dagster metadata store is wiped,
+the watermark survives because it lives in the data itself.
 
 **Metric promotion (manual seed migration):**
 
@@ -375,7 +382,7 @@ redistribution enforcement model. This table shows what customers lose per tier:
 | Module | Affected Sources | Fields Suppressed When Blocked | Tiers Affected |
 |--------|-----------------|-------------------------------|----------------|
 | Derivatives Intelligence Feed | Coinalyze (`pending`) | Funding rate, OI, liquidations, L/S ratio | Signal API, Intelligence Suite, Risk Feed |
-| Flow Intelligence | SoSoValue (`blocked`), Etherscan (`pending`) | ETF flows (SoSoValue), exchange net flows (Etherscan) | Intelligence Suite |
+| Flow Intelligence | Etherscan (`pending`) | Exchange net flows (Etherscan) | Intelligence Suite |
 | Liquidation Risk Monitor | Binance BLC-01 (`pending`) | Real-time tick liquidations | Intelligence Suite, Risk Feed |
 | On-Chain Valuation Monitor | BGeometrics (`pending`), CoinMetrics (`blocked`) | MVRV, SOPR, NUPL, Puell (BGeometrics); transfer volume (CoinMetrics) | Signal API, Intelligence Suite, Ecosystem Monitor |
 | Protocol Health Score | DeFiLlama (`allowed`) | None — DeFiLlama is redistribution-clear | Ecosystem Monitor |
@@ -383,8 +390,7 @@ redistribution enforcement model. This table shows what customers lose per tier:
 
 **DG-R1 resolution effect:** After Phase 4 ToS audits clear Coinalyze, BGeometrics,
 Etherscan, and BLC-01, the `pending` rows above transition to `allowed`. Only
-SoSoValue and CoinMetrics remain `blocked` at Phase 5 launch — affecting Flow
-Intelligence ETF flows and On-Chain transfer volume respectively.
+CoinMetrics remains `blocked` at Phase 5 launch — affecting On-Chain transfer volume.
 
 Annual plan at $1,990 = ~16% discount (2 months free). Manual invoicing at sub-20
 customers. Stripe deferred: trigger = 20+ active subscribers.
@@ -478,7 +484,7 @@ cadence and attract organic Profile A discovery.
 | Fields excluded | Pillar scores, ML probabilities, confidence, regime, null states — no detail beyond composite |
 | Endpoint | `GET /v1/preview` — unauthenticated, public, rate-limited (60 req/min per IP) |
 | Rendering | Server-side rendered HTML at `fromthebridge.net` (Next.js page). No JavaScript API call from browser. |
-| Redistribution | Preview data is 48h delayed and aggregated (top/bottom only). Redistribution-blocked sources (SoSoValue, CoinMetrics) contribute to composite score but individual source attribution is not exposed. |
+| Redistribution | Preview data is 48h delayed and aggregated (top/bottom only). Redistribution-blocked sources (CoinMetrics) contribute to composite score but individual source attribution is not exposed. |
 | Phase gate | Phase 4 gate row: "48h public preview operational on `fromthebridge.net` by shadow week 2" |
 
 **Pre-Launch Content Strategy:**
@@ -692,7 +698,7 @@ real and common configuration.
 
 **Pillar 2: Liquidity & Flow** (`pillar_id = "liquidity_flow"`)
 Derivatives positioning (funding, OI, liquidations), exchange flow direction,
-stablecoin supply dynamics, ETF flow direction. The "money in motion" pillar.
+stablecoin supply dynamics. The "money in motion" pillar.
 *Status: LIVE (EDSx-03 R3, shadow mode on rebuild track)*
 
 **Pillar 3: Valuation** (`pillar_id = "valuation"`)
@@ -802,7 +808,7 @@ market-level proxy for all others. Two-mode operation: `has_exchange_flow` flag
 signals which mode is active.
 **Input dimension:** ~40–60 features.
 **Output:** `p_inflow`, `p_neutral`, `p_outflow` (sum = 1.0) + `flow_magnitude` [0,1]
-+ `has_exchange_flow`, `has_etf_flow` (coverage flags for Layer 2 weighting)
++ `has_exchange_flow` (coverage flag for Layer 2 weighting)
 
 #### Model 3: Macro Regime
 
@@ -879,7 +885,6 @@ aggregate OI < Binance single-exchange OI from Oct 2025 — investigate before m
 - BLC-01 tick liquidations: EXCLUDE from initial training. Use Coinalyze aggregated
   liquidations. BLC-01 becomes ML-relevant ~Jul 2027 (450 days accumulated).
 - CFTC COT: Include as separate variant (BTC from Dec 2017, ETH from Apr 2021).
-- SoSoValue ETF flows: Train with feature-available-from marker.
 - Binance bulk: Include (96,771 rows already loaded in Forge DB, Dec 2021-Mar 2026).
 
 **Backfill execution priority (blocks ML training):**
@@ -1495,9 +1500,6 @@ the float.
 | Stablecoin supply change | `stablecoin.supply.total_usd` | change_pct | 1d |
 | Stablecoin supply change | `stablecoin.supply.total_usd` | change_pct | 7d |
 | Stablecoin supply zscore | `stablecoin.supply.total_usd` | zscore | 30d |
-| ETF net flow | `etf.flows.net_flow_usd` | value | 1 period |
-| ETF flow cumulative | `etf.flows.net_flow_usd` | cumsum | 7d |
-| ETF flow cumulative | `etf.flows.net_flow_usd` | cumsum | 30d |
 | On-chain transfer vol | `chain.activity.transfer_volume_usd` | value | 1 period |
 | On-chain transfer MA | `chain.activity.transfer_volume_usd` | ma | 7d |
 | On-chain transfer zscore | `chain.activity.transfer_volume_usd` | zscore | 30d |
@@ -1575,7 +1577,6 @@ retroactively change historical ranks.
 | Flow-to-OI ratio | exchange_net_flow_usd / oi_usd | 1d |
 | Funding-to-basis spread | funding_rate - perp_basis | 8h |
 | Stablecoin-to-DeFi ratio | stablecoin_supply_usd / defi_tvl_usd | 1d |
-| ETF flow-to-OI ratio | etf_net_flow_usd / oi_usd | 1d |
 
 ### Category D: Regime and State Labels
 
@@ -2076,7 +2077,7 @@ LIMIT 1;
 
 ### Metric Catalog Seed Data
 
-**Authoritative specification.** The table below IS the Phase 0 seed — 74 metrics
+**Authoritative specification.** The table below IS the Phase 0 seed — 72 metrics
 across 9 domains. The corrective migration (`0004_phase0_corrective.sql`) implements
 this table character-for-character. Phase 1 additions = 9 metrics (2 DeFi protocol +
 4 CFTC COT + 2 derived + 1 NVT proxy). Total at Phase 1 completion = 83.
@@ -2108,8 +2109,6 @@ the `domain` column CHECK constraint.
 | flows.whale.net_direction | flows | whale | Whale Net Direction (derived) | ratio | numeric | per_instrument | 8 hours | 16 hours | false | (whale_inflow - whale_outflow) / whale_total | {etherscan} | active |
 | flows.exchange.spot_volume_usd | flows | exchange | Exchange Spot Volume (USD) | usd | numeric | per_instrument | 1 day | 2 days | false | | {} | active |
 | flows.exchange.btc_net_flow | flows | exchange | BTC Exchange Net Flow | usd | numeric | market_level | 1 day | 2 days | false | | {} | active |
-| etf.flows.net_flow_usd | etf | flows | ETF Net Flow (USD) | usd | numeric | per_instrument | 1 day | 2 days | false | | {sosovalue} | active |
-| etf.flows.cumulative_flow_usd | etf | flows | ETF Cumulative Flow (USD, derived) | usd | numeric | per_instrument | 1 day | 2 days | false | SUM(net_flow_usd) OVER (PARTITION BY instrument_id ORDER BY observed_at) | {sosovalue} | active |
 | stablecoin.supply.per_asset_usd | stablecoin | supply | Stablecoin Per-Asset Supply (USD) | usd | numeric | per_instrument | 12 hours | 1 day | false | | {defillama} | active |
 | stablecoin.peg.price_usd | stablecoin | peg | Stablecoin Peg Price (USD) | usd | numeric | per_instrument | 12 hours | 1 day | false | | {defillama} | active |
 | stablecoin.peg.deviation | stablecoin | peg | Stablecoin Peg Deviation (derived) | pct | numeric | per_instrument | 12 hours | 1 day | false | abs(peg_price_usd - 1.0) | {defillama} | active |
@@ -2182,7 +2181,7 @@ for cadence > 24h. Metadata: `7 days`.
 > seed and must be added to the FRED adapter during Phase 1 build — it is not yet
 > in the legacy FRED adapter.
 
-**Phase 1 additions (9 metrics, not in seed table above):**
+**Phase 1 additions (11 metrics, not in seed table above):**
 - `defi.protocol.fees_usd_24h`, `defi.protocol.revenue_usd_24h` — DeFiLlama
 - `macro.cot.institutional_net_position`, `macro.cot.institutional_long_pct`,
   `macro.cot.open_interest_contracts`, `macro.cot.dealer_net_position` — CFTC COT
@@ -2190,6 +2189,8 @@ for cadence > 24h. Metadata: `7 days`.
   Signal relevance: EDSx-05 Tactical Macro, ML Capital Flow Direction.
 - `spot.market_cap.total_crypto_usd`, `spot.dominance.btc_pct` — derived
 - `macro.nvt_txcount_proxy` — market_cap / transfer_volume. Evidence-gated.
+- `macro.etf.aum_usd`, `macro.etf.shares_outstanding` — SEC EDGAR N-PORT filings.
+  Quarterly structural metrics, ~45-day lag. Supplementary macro context, not flow proxies.
 
 ### Source Catalog Seed Data
 
@@ -2206,7 +2207,7 @@ sources. The corrective migration implements this table.
 | defillama | DeFiLlama | 1 | unaudited | true | allowed | free | Keyless, free, excellent coverage |
 | etherscan | Etherscan V2 / Explorer | 2 | unaudited | NULL | pending | freemium | ETH + Arbitrum exchange flow wallet tracking |
 | fred | FRED (Federal Reserve) | 1 | none | true | allowed | free | Public domain |
-| sosovalue | SoSoValue | 1 | restricted | false | blocked | free | ETF flows — internal only, non-commercial ToS |
+| sec_edgar | SEC EDGAR | 2 | none | true | allowed | free | Quarterly ETF structural data — public domain, no restrictions |
 | tiingo | Tiingo | 1 | unaudited | NULL | allowed | paid | OHLCV, paid commercial tier |
 
 **Columns not shown (all default for Phase 0 seeds):** `propagate_restriction` (true),
@@ -2357,6 +2358,13 @@ Every adapter implements exactly these responsibilities, no more, no less:
 invalid data · transform values in undocumented ways · know anything about the
 signal layer
 
+**Code organization — composition pattern:** Adapters and the sync bridge share
+writer utilities (`writers/silver.py`, `writers/bronze.py`, `writers/collection.py`)
+and validation (`validation/`). Each adapter or sync asset owns its orchestration
+logic (fetch → validate → write) but delegates writes and validation to shared
+modules. No adapter inherits from a base class. This keeps adapters decoupled —
+decommissioning one adapter has no effect on others or on the shared writers.
+
 **Validation applied per observation (independent, not batch):**
 A single bad value is dead-lettered. The rest of the batch continues.
 
@@ -2404,17 +2412,19 @@ CoinMetrics).
 
 ### Great Expectations — Bronze → Silver Validation
 
-**Framework:** Great Expectations (GE). Runs inside the adapter process after Bronze
-write, before Silver write. Validates the Bronze payload against catalog expectations.
+**Framework:** Great Expectations (GE). Runs inside the sync bridge
+(`validate_and_split()` in `empire_to_forge_sync`) as the validation implementation.
+GE validates the in-memory observation batch (as a pandas DataFrame) before Silver
+write. The function signature is unchanged — GE is the engine, not a new asset.
 
 **Suite names (one per validation scope):**
 
 | Suite | Scope | Runs when |
 |-------|-------|-----------|
-| `bronze_core` | Universal expectations — all adapters | Every collection run |
-| `bronze_{source_id}` | Source-specific expectations (e.g., `bronze_coinalyze`) | Per-adapter, additive to core |
+| `bronze_core` | Universal expectations — all data entering FTB | Every sync run |
+| `bronze_{source_id}` | Source-specific expectations (e.g., `bronze_coinalyze`) | Per-source, additive to core |
 
-**Core expectations (`bronze_core` suite):**
+**Core expectations (`bronze_core` suite — 8 expectations):**
 
 1. `expect_column_values_to_not_be_null` — `metric_id` (every observation must map)
 2. `expect_column_values_to_not_be_null` — `instrument_id` (for instrument-scoped metrics)
@@ -2423,21 +2433,33 @@ write, before Silver write. Validates the Bronze payload against catalog expecta
 5. `expect_column_values_to_be_between` — `value` within `(range_min, range_max)` from metric catalog (where defined)
 6. `expect_compound_columns_to_be_unique` — `(metric_id, instrument_id, observed_at)` no duplicates within batch
 7. `expect_column_values_to_not_be_null` — `observed_at` (temporal anchor required)
+8. `expect_column_values_to_not_be_null` — `value` (for non-nullable metrics only)
+
+**Conditionality strategy:** Expectations #5 and #8 are catalog-driven — generated
+only for metrics that define range bounds (#5) or have `is_nullable = false` (#8).
+The suite builder takes `(metric_catalog, instrument_set)` as arguments and produces
+a dynamic suite. Expectation #2 runs against all rows; the rejection mapper
+suppresses `UNKNOWN_INSTRUMENT` for market-level metrics (where `instrument_id` is
+legitimately null). This is option (b): run broadly, filter in the mapper.
 
 **Failure behavior:**
 - **Per-observation:** Failed rows are rejected to `forge.dead_letter` with the
   appropriate `rejection_code`. The batch continues — GE never blocks the pipeline.
-- **Per-batch:** If rejection rate > 50% for a single batch, the adapter logs a
+- **Per-batch:** If rejection rate > 50% for a single batch, the sync bridge logs a
   warning to `collection_events.notes` but still completes. No circuit breaker in v1.
-- **Checkpoint:** GE checkpoint result is stored as Dagster asset metadata for
-  observability. The Phase 1 gate criterion "GE checkpoint passes" means: the
-  checkpoint runs, core expectations execute, and dead-lettered rows have valid
-  rejection codes.
+- **Checkpoint:** GE checkpoint result is stored as Dagster asset metadata as a
+  summary dict (`suite`, `passed`, `expectations_total`, `expectations_failed`,
+  `rows_validated`, `rows_rejected`, `rejection_breakdown`). The Phase 1 gate
+  criterion "GE checkpoint passes" means: the suite runs, all 8 core expectations
+  execute, and dead-lettered rows have valid `rejection_code` values. "Passes" means
+  the validation machinery runs and routes correctly — not that zero rejections occur.
+  Rejections are expected and healthy; silent failures or missing rejection codes are
+  not.
 
-**Source-specific suites (Phase 1, additive):** Adapter-specific expectations extend
+**Source-specific suites (Phase 1, additive):** Source-scoped expectations extend
 the core suite. Examples: Coinalyze funding rate in `(-0.01, 0.01)`, FRED series IDs
-match known set, ETF flow values in USD (not cents). These are defined during adapter
-build, not pre-specified.
+match known set, stablecoin peg price in `[0.90, 1.10]`. These are defined during
+source onboarding, not pre-specified.
 
 ### Silver → Gold Export
 
@@ -2464,7 +2486,7 @@ Referenced by `AutomationCondition` and `@hourly` fallback schedule.
 | DeFiLlama | `collect_defillama` | 12h |
 | Etherscan | `collect_etherscan` | 8h |
 | FRED | `collect_fred` | 24h |
-| SoSoValue | `collect_sosovalue` | 24h |
+| SEC EDGAR | `collect_sec_edgar` | quarterly |
 | Tiingo | `collect_tiingo` | 6h |
 - **Guard:** `minimum_interval_seconds=600` prevents export thrashing when multiple
   adapters land at shared cadence boundaries.
@@ -2702,29 +2724,46 @@ available until Friday. PIT queries use `ingested_at` to prevent look-ahead bias
 reporting category — verify during integration test. Socrata API pagination may be
 required for historical backfill.
 
-#### SoSoValue
+#### SoSoValue — DROPPED (2026-03-10)
 
-**Provides:** ETF flows (BTC/ETH spot ETFs)
-**ToS:** Non-commercial only. **Hard constraint.** `redistribution = false` in source
-catalog. Cannot appear in any external data product until ToS audit resolves or paid
-tier acquired.
-**Cadence:** Daily at 20:00 UTC (after US market close)
+**Reason:** Non-commercial ToS with no commercial license path. No paid tier, no enterprise sales.
+ETF flow metrics (`etf.flows.*`) removed from metric catalog, feature specs, and ML model inputs.
+SEC EDGAR quarterly structural metrics added as supplementary macro inputs (see §EDGAR below).
+
+#### SEC EDGAR (E5 — Phase 1 addition)
+
+**Provides:** Quarterly ETF structural metrics — AUM, shares outstanding, creation/redemption activity
+**Source:** SEC EDGAR XBRL filings (N-PORT, 13F) via `sec.gov/cgi-bin/browse-edgar`
+**ToS:** Public domain. No restrictions. Free.
+**Cadence:** Quarterly. ~45-day publication lag from quarter-end.
+**Granularity:** `market_level` (aggregated across issuers per instrument)
 
 **Field mappings:**
 
-| Source field | Canonical metric_id | instrument_id | Notes |
+| Source filing | Canonical metric | instrument_id | Notes |
 |---|---|---|---|
-| BTC ETF net flow (USD) | `etf.flows.net_flow_usd` | `BTC-USD` | Daily net inflow/outflow |
-| ETH ETF net flow (USD) | `etf.flows.net_flow_usd` | `ETH-USD` | Daily net inflow/outflow |
-| SOL ETF net flow (USD) | `etf.flows.net_flow_usd` | `SOL-USD` | Daily net inflow/outflow |
+| N-PORT net assets | `macro.etf.aum_usd` | `BTC-USD` | Quarterly AUM snapshot |
+| N-PORT net assets | `macro.etf.aum_usd` | `ETH-USD` | Quarterly AUM snapshot |
+| N-PORT shares outstanding | `macro.etf.shares_outstanding` | `BTC-USD` | Share creation/redemption proxy |
+| N-PORT shares outstanding | `macro.etf.shares_outstanding` | `ETH-USD` | Share creation/redemption proxy |
 
-**Derived by adapter:**
-- `etf.flows.cumulative_flow_usd` — running sum of net_flow_usd per instrument_id, computed at write time.
+**Timestamp handling:** `observed_at` = quarter-end date. `ingested_at` = filing publication date.
+Features must account for the ~45-day publication lag — PIT queries use `ingested_at`.
+
+**Signal relevance:** Supplementary macro context for Tactical Macro pillar. NOT a daily flow proxy —
+these are quarterly structural snapshots. Do not use as substitutes for the dropped daily ETF flow features.
 
 #### Tiingo
 
 **Provides:** OHLCV (crypto + equities)
-**ToS:** Free tier available, commercial use on paid tier
+**ToS:** Free tier available, commercial use on paid tier. Redistribution clause
+(LH-06) must be verified before Phase 6 gate.
+**Lifecycle: Transitional.** Tiingo is a Phase 1 convenience source for spot
+prices. EDS Track 2 now collects Tiingo data (`eds_track_2_tiingo`) and FTB
+receives it via `empire_to_forge_sync`. When EDS builds direct exchange API
+collection (Track 2 completion), Tiingo may be replaced entirely. Evaluate at
+Phase 2 gate: if EDS provides equivalent OHLCV coverage with equal or better
+depth, decommission Tiingo per §Adapter Decommission Protocol.
 **Known issues:** Equity volume is in shares — multiply by close price for USD.
 Adapter must branch on `asset_class`.
 
@@ -2794,7 +2833,7 @@ a P0 Phase 1 action.
 | DeFiLlama | Yes (5 fields) | Complete |
 | FRED | Yes (5 Phase 0 + 18 Phase 1 implicit) | Needs explicit Phase 1 mappings |
 | CFTC COT | Yes (4 fields) | Complete |
-| SoSoValue | Yes (3 fields) | Complete |
+| SEC EDGAR | Yes (2 fields) | Complete |
 | Tiingo | No | Build during adapter implementation |
 | CoinPaprika | No | Build during adapter implementation |
 | BGeometrics | No | Build during adapter implementation |
@@ -2828,7 +2867,7 @@ mappable? Is metric identity clear?
 | DeFiLlama lending | 9,651 | GREEN | Migrate |
 | CoinMetrics on-chain | 10,137 | GREEN | Migrate, flag internal-only |
 | Exchange flows | 2,177 | RED (wei bug) | Migrate with wei→ETH conversion applied in migration adapter |
-| ETF flows | 774 | GREEN | Migrate, flag internal-only |
+| ETF flows | 774 | DROPPED | Source removed — no commercial license path |
 | DeFi protocols | 195 | SHALLOW | Skip — backfill from DeFiLlama API |
 | Stablecoins | 180 | SHALLOW | Skip — backfill from DeFiLlama API |
 
@@ -2966,7 +3005,7 @@ components are blocked. See §Redistribution Enforcement for full spec.
 | Etherscan/Explorer | pending | true | Unaudited; conservative default until Phase 6 audit |
 | Binance BLC-01 | pending | true | Unaudited; conservative default until Phase 6 audit |
 | CoinMetrics | blocked | true | Internal-only ToS; derived restriction likely |
-| SoSoValue | blocked | true | Non-commercial ToS; derived use restricted |
+| SEC EDGAR | allowed | false | Public domain; no restrictions |
 | CFTC COT | allowed | false | Public government data |
 
 ### Rate Limits
@@ -3131,8 +3170,7 @@ until ToS audit confirms derived works are unrestricted. Operator can relax per 
 with zero code changes (single SQL UPDATE).
 
 **Product impact at v1 launch (default settings):** Derivatives features (Coinalyze
-inputs) return `pending`. Capital Flow Direction ML model (SoSoValue input) returns
-`blocked`. Composite `final_score` degrades gracefully — EDSx uses available pillars,
+inputs) return `pending`. Composite `final_score` degrades gracefully — EDSx uses available pillars,
 ML uses available models, synthesis reweights accordingly.
 
 #### Schema: `source_catalog` Redistribution Columns
@@ -3195,10 +3233,10 @@ is present in the response with `value: null` plus inline metadata:
 
 ```json
 {
-  "metric_id": "flows.etf_flow_normalized",
+  "metric_id": "chain.activity.transfer_volume_usd",
   "value": null,
   "redistribution_status": "blocked",
-  "blocking_sources": ["sosovalue"],
+  "blocking_sources": ["coinmetrics"],
   "observed_at": null
 }
 ```
@@ -3209,9 +3247,8 @@ suppressed fields:
 ```json
 {
   "_redistribution_notice": {
-    "fields_suppressed": 3,
+    "fields_suppressed": 2,
     "detail": [
-      {"field": "ml.capital_flow_direction.p_bullish", "status": "blocked", "sources": ["sosovalue"]},
       {"field": "edsx.pillars.derivatives", "status": "pending", "sources": ["coinalyze"]},
       {"field": "edsx.pillars.tactical_macro", "status": "pending", "sources": ["coinalyze"]}
     ]
@@ -3291,14 +3328,9 @@ shadow period.
 1. **Coinalyze, BGeometrics, Etherscan, BLC-01** ToS audits run in parallel during
    Phase 4 shadow period (not deferred to Phase 6). Target: all four cleared to
    `allowed` before Phase 5 gate.
-2. **SoSoValue and CoinMetrics** remain `blocked` (harder ToS — non-commercial and
-   internal-only respectively). Phase 6 ToS audit or paid tier negotiation.
-3. **Phase 5 launch posture:** Flow Intelligence ETF flow fields (SoSoValue-sourced)
-   launch with conditional null-flagging if SoSoValue ToS is unresolved at Phase 5.
-   Fields return `value: null` with `redistribution_status: "blocked"` and
-   `blocking_sources: ["sosovalue"]`. This is not product degradation — it is
-   expected and documented in methodology.
-4. **Phase dependency:** Phase 4 shadow period is the audit window for the four
+2. **CoinMetrics** remains `blocked` (internal-only ToS). Phase 6 ToS audit or paid tier negotiation.
+   SoSoValue dropped entirely (2026-03-10) — no commercial license path. ETF flow metrics removed.
+3. **Phase dependency:** Phase 4 shadow period is the audit window for the four
    `pending` sources. If any audit is not complete by Phase 5 gate, those sources
    remain `pending` and their derived fields are null-flagged at launch (same
    mechanism as SoSoValue). This is a graceful degradation, not a blocker.
@@ -3310,10 +3342,10 @@ straightforward ToS audits of free-tier APIs.
 
 **Context (preserved for reference):** At launch with default `propagate_restriction
 = true`, suppression of `pending` sources would affect EDSx derivatives_pressure
-pillar (Coinalyze), EDSx liquidity_flow pillar (Etherscan + SoSoValue), ML Capital
-Flow Direction model (SoSoValue), ML Derivatives Pressure model (Coinalyze), and
-composite score (severely degraded). Option B resolves the `pending` sources; the
-`blocked` sources (SoSoValue/CoinMetrics) produce documented null-flagged fields.
+pillar (Coinalyze), EDSx liquidity_flow pillar (Etherscan), ML Derivatives Pressure
+model (Coinalyze), and composite score (severely degraded). Option B resolves the
+`pending` sources; CoinMetrics remains `blocked` and produces documented null-flagged
+fields. SoSoValue dropped (2026-03-10) — ETF flow metrics removed from catalog.
 
 #### Remaining Open Assumptions
 
@@ -3820,7 +3852,7 @@ writes the canonical snapshot to `MinIO gold/snapshots/latest.json` first, then 
 FastAPI. Event-driven — no polling.
 
 **Entitlement model (Option C):** Redistribution filter applied at cache populate time.
-Gated field values (SoSoValue, CoinMetrics) are never present in the `app.state` cache
+Gated field values (CoinMetrics) are never present in the `app.state` cache
 object — enforcement is structural, not per-request policy. Per-request tier filtering
 (per-tier field redaction) adds microseconds only.
 
@@ -4141,7 +4173,7 @@ verification. No collection. No computation.
 | MinIO accessible | Bucket created, Iceberg catalog configured, test Parquet file written and DuckDB-readable |
 | Metric catalog | Every metric from Thread 3 requirements has a catalog entry |
 | PIT query | PIT query returns correct value from manually inserted test observation with data_version revision |
-| Redistribution flags | SoSoValue and CoinMetrics have `redistribution_status = 'blocked'`; Coinalyze/BGeometrics/Etherscan/BLC-01 have `redistribution_status = 'pending'`; remaining sources `'allowed'` |
+| Redistribution flags | CoinMetrics has `redistribution_status = 'blocked'`; Coinalyze/BGeometrics/Etherscan/BLC-01 have `redistribution_status = 'pending'`; remaining sources `'allowed'` |
 
 **Timeline estimate:** 3–5 days. Primary risk: schema defects during DDL application.
 
@@ -4155,7 +4187,7 @@ per-instrument partitioning).
 
 **Steps:**
 1. Migration adapters in order: Tiingo → Coinalyze → FRED → DeFiLlama DEX →
-   DeFiLlama Lending → CoinMetrics → Exchange Flows (with wei fix) → ETF Flows
+   DeFiLlama Lending → CoinMetrics → Exchange Flows (with wei fix)
 2. Backfill jobs for shallow datasets: DeFiLlama protocols, stablecoins,
    CoinPaprika market cap
 3. Add `BAMLH0A0HYM2` (HY OAS) and 18 additional FRED series to FRED adapter
@@ -4182,7 +4214,7 @@ per-instrument partitioning).
 | Tiingo history | BTC from 2014, ETH from 2015 confirmed |
 | Wei fix | Exchange flows Gate.io values in USD confirmed (not wei) |
 | Tier promotion | ≥ 12 instruments at signal_eligible tier, all passing admission criteria (see instrument admission framework) |
-| Redistribution | SoSoValue/CoinMetrics rows confirmed with correct source flags |
+| Redistribution | CoinMetrics rows confirmed with correct source flags |
 | NAS backup | MinIO backup job running, last successful backup verified |
 | Export round-trip | Full path verified: collection → Bronze → Silver → export trigger → Gold readable via DuckDB |
 | FINAL query 50k-row window | Wall time < 10 seconds |
@@ -4193,7 +4225,7 @@ per-instrument partitioning).
 | CFTC COT Silver | CFTC adapter producing Silver rows for 4 metrics (BTC + ETH) |
 | `macro.credit.hy_oas` in FRED | `BAMLH0A0HYM2` series confirmed collecting via FRED adapter, Silver rows present |
 | `ingested_at` correctness | For ≥1 source with known publication lag (CFTC COT): verify `ingested_at` = actual wall-clock collection time (Friday), not `observed_at` (Tuesday). For ≥1 real-time source: verify `ingested_at` ≈ `observed_at` within adapter execution window. |
-| GE checkpoint | `bronze_core` suite runs on every collection asset. Checkpoint result stored in Dagster asset metadata. Dead-lettered rows have valid `rejection_code` values. |
+| GE checkpoint | `bronze_core` suite (8 expectations) runs on every sync execution. Checkpoint summary stored in Dagster asset metadata. Dead-lettered rows have valid `rejection_code` values. Pass = suite runs and routes correctly, not zero rejections. |
 | Dead letter nullability | Tests pass: null `borrow_apy` (valid) vs. null `utilization_rate` (dead letter violation) |
 | C2 bronze-archive bucket | `bronze-archive` bucket created, lifecycle policy applied to `bronze-hot` (90-day expiry) |
 | C2 archive credentials | `MINIO_BRONZE_ARCHIVE_USER` isolated — no write permission to `bronze-hot` |
@@ -4284,7 +4316,7 @@ window edge cases.
 | Pillar count | All 5 pillars producing non-null scores (trend_structure, liquidity_flow, valuation, structural_risk, tactical_macro). Phase 2 quality gate is the protection against sparse data — by Phase 3, all feature inputs are validated. |
 | Regime at emission | Regime classification stored at emission time in `marts.signals_history.regime`; not recomputed at query time |
 | Neutral threshold | ±0.10 threshold verified: signals within range classified as neutral; downstream performance metrics (hit_rate, Sharpe) computed correctly with neutral exclusion |
-| DG-R1 recorded | ✅ Resolved: Option B — parallel ToS audit during Phase 4 shadow. Coinalyze/BGeometrics/Etherscan/BLC-01 audits during shadow period. SoSoValue/CoinMetrics remain `blocked`. ETF flow fields null-flagged at Phase 5 launch if unresolved. See §Redistribution Enforcement. |
+| DG-R1 recorded | ✅ Resolved: Option B — parallel ToS audit during Phase 4 shadow. Coinalyze/BGeometrics/Etherscan/BLC-01 audits during shadow period. CoinMetrics remains `blocked`. SoSoValue dropped (2026-03-10). See §Redistribution Enforcement. |
 
 **Timeline estimate:** 1-2 weeks.
 
@@ -4427,7 +4459,7 @@ Track F — Signal Snapshot Cache (C3):
 | B3 latency SLA | `GET /v1/signals/performance` p95 ≤ 500ms under representative load |
 | C3 cache warm start | FastAPI reads `gold/snapshots/latest.json` from MinIO on startup; `cache.ready=True` within 5s |
 | C3 readiness gate | `/healthz/ready` returns 503 until cache warm; Docker health check prevents premature traffic |
-| C3 redistribution isolation | Option C verified: gated field values (SoSoValue, CoinMetrics) never present in `app.state` cache object |
+| C3 redistribution isolation | Option C verified: gated field values (CoinMetrics) never present in `app.state` cache object |
 | C3 tier filtering | Per-request tier filter produces correct field sets for all 5 tiers against Thread 7 field-level gates |
 | C3 staleness behavior | Cache age > 9h → `is_stale=True` in response; no HTTP error; `next_computation_estimated=null` |
 | C3 latency SLA | `GET /v1/signals` full universe p95 < 50ms (cache hit) |
@@ -4514,7 +4546,7 @@ There is no parallel operation. Forge is dead. Forge database retained read-only
 | ML shadow period | Minimum 30 days. Extension if shadow evaluation fails. |
 | Layer 2 synthesis | Designed and locked (§L2.1–L2.8). Implementation in Phase 5. |
 | First customer | Signal API tier after Phase 5 gate. Direct engagement. Real pricing. No free trials. |
-| ToS audit timing | Coinalyze/BGeometrics/Etherscan/BLC-01: parallel during Phase 4 shadow (DG-R1 Option B). SoSoValue/CoinMetrics: Phase 6. |
+| ToS audit timing | Coinalyze/BGeometrics/Etherscan/BLC-01: parallel during Phase 4 shadow (DG-R1 Option B). CoinMetrics: Phase 6. SoSoValue: dropped (2026-03-10). |
 | Schema defects | Fixed before Phase 1 begins. No schema changes after Phase 0 gate. |
 | Security posture (D1) | File-based secrets (`secrets/` bind mounts, chmod 600). ClickHouse credential isolation (`ch_writer` INSERT-only, `ch_export_reader` SELECT-only). MinIO per-bucket service accounts. Customer API keys: argon2id hashed, 1Password delivery. Annual rotation March. 4 incident playbooks. Phase 0 corrective: SEC-01 through SEC-06. |
 
@@ -4605,7 +4637,7 @@ with zero application code changes.
 │   └── external_apis/          # chmod 700
 │       ├── tiingo.txt
 │       ├── coinalyze.txt
-│       ├── sosovalue.txt
+│       ├── sec_edgar.txt
 │       ├── etherscan.txt
 │       ├── coinpaprika.txt
 │       ├── coinmetrics.txt
@@ -5358,7 +5390,7 @@ The design is correctly implemented when:
 | Silver → Gold export cadence (6h) | **Resolved.** Hybrid event-triggered sensor + 1-hour fallback. Worst-case 44min. See §Silver→Gold Export. | — |
 | Redistribution enforcement design | **Resolved (A2).** Three-state enum, Option C propagation, `metric_redistribution_tags`, null-with-flag response, 5 audit evidence queries. See §Redistribution Enforcement. | — |
 | CoinMetrics redistribution | `blocked` (internal-only ToS). Propagates to derived outputs until `propagate_restriction` relaxed. | Phase 6 ToS audit |
-| SoSoValue redistribution | `blocked` (non-commercial ToS). Propagates to Capital Flow Direction ML model. ETF flow fields conditionally null-flagged at Phase 5 launch (DG-R1). | Phase 6 ToS audit or paid tier |
+| SoSoValue | **Dropped** (2026-03-10). No commercial license path. ETF flow metrics removed from catalog, features, and ML inputs. EDGAR quarterly structural metrics added as supplementary macro inputs. | — |
 | Coinalyze / BGeometrics / Etherscan / BLC-01 redistribution | `pending` (unaudited). Propagates to derived outputs at default settings. | Phase 4 shadow ToS audit (DG-R1 Option B) |
 | BLC-01 ToS audit | Unaudited — internal only | Phase 4 shadow ToS audit (DG-R1 Option B) |
 | Index/benchmark licensing | Deferred to v2 | Methodology documented + ToS audited |
@@ -5390,7 +5422,7 @@ The design is correctly implemented when:
 | DeFiLlama | Protocol TVL, DEX volume, lending yields, stablecoins, fees, revenue | Low risk | Yes |
 | FRED | 23 macro series (yields, VIX, SPX, DXY, employment, CB balance sheets) | None (public domain) | Yes |
 | Tiingo | OHLCV (crypto + equities) | Paid commercial tier | Yes (paid) |
-| SoSoValue | ETF flows (BTC/ETH/SOL) | Non-commercial only | **No** |
+| SEC EDGAR | Quarterly ETF structural metrics (AUM, shares outstanding) | Public domain | Yes |
 | Etherscan/Explorer | Exchange flows — ETH + ARB, 9 exchanges, 18 instruments | Unaudited | Pending Phase 6 audit |
 | CoinPaprika | Market cap, price data | Low risk | Yes |
 | CoinMetrics | On-chain transfer volume (GitHub CSVs) | Unaudited | **No** (pending audit) |
@@ -5542,7 +5574,7 @@ All decisions from all threads in one place.
 | Migration order | Tiingo first (spot price dependency), then remaining |
 | Parallel operation | None. Forge read-only 90 days. |
 | ML shadow period | Minimum 30 days |
-| ToS audit | Coinalyze/BGeometrics/Etherscan/BLC-01: Phase 4 shadow (DG-R1 Option B). SoSoValue/CoinMetrics: Phase 6. |
+| ToS audit | Coinalyze/BGeometrics/Etherscan/BLC-01: Phase 4 shadow (DG-R1 Option B). CoinMetrics: Phase 6. SoSoValue: dropped (2026-03-10). |
 
 ---
 

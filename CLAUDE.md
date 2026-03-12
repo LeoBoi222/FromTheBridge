@@ -33,7 +33,7 @@ External APIs → EDS adapters → empire.observations → empire_to_forge_sync 
 |-----------|---------|--------|
 | Track 1 (Nodes) | BGeometrics replacements, CoinMetrics replacements, Etherscan replacements | Node infra building |
 | Track 2 (Exchange APIs) | Coinalyze replacements, Tiingo replacements (OHLCV direct) | Planned |
-| Track 3 (Public Feeds) | FRED, DeFiLlama, CFTC COT, CoinPaprika, SoSoValue → SEC EDGAR | FRED + DeFiLlama deployed |
+| Track 3 (Public Feeds) | FRED, DeFiLlama, CFTC COT, CoinPaprika, SEC EDGAR | FRED + DeFiLlama deployed |
 
 **FTB builds NO source adapters.** If a source needs collecting, it belongs in EDS. FTB's responsibilities at the data boundary:
 1. `empire_to_forge_sync` — the Dagster asset that reads `empire.observations` and writes to `forge.observations` with `source_id='eds_derived'`
@@ -91,7 +91,7 @@ Data flows downward only. No layer reads a layer above itself.
 | Phase 2–6 | Features → Productization | ❌ Not started |
 
 **Deployed on proxmox (verified):**
-- PostgreSQL `forge` schema: 74 metrics, 10 sources, 4 instruments, 3 instrument_source_map rows, 3 metric_lineage rows
+- PostgreSQL `forge` schema: 74 metrics (72 seed + 2 EDGAR), 10 sources + eds_derived (SoSoValue→SEC EDGAR swap), 4 instruments, 3 instrument_source_map rows, 3 metric_lineage rows
 - ClickHouse `forge`: 3 tables (observations, dead_letter, current_values MV)
 - MinIO: bronze-hot, bronze-archive, gold buckets exist
 - Dagster: 4 containers running (webserver, daemon, code_ftb, code_eds)
@@ -105,12 +105,16 @@ Data flows downward only. No layer reads a layer above itself.
 - `writers/silver.py`, `bronze.py`, `collection.py` — shared write utilities
 - `validation/core.py` — observation validation
 - `sync/bridge.py` + `sync_asset.py` — empire_to_forge_sync (deployed, 6h schedule)
-- `resources.py` — Dagster resources (ClickHouse, PostgreSQL, MinIO, API keys, ch_empire_reader)
+- `resources.py` — Dagster resources (ClickHouse, PostgreSQL, MinIO, API keys, ch_empire_reader, ch_ops_reader)
 - `archive/archive_asset.py` + `audit_asset.py` — bronze archive + expiry audit assets
 - `export/gold_export.py` — domain mapping, merge logic, anomaly guard
 - `export/gold_iceberg.py` — Gold Iceberg table management (PyIceberg)
 - `export/export_asset.py` — `gold_observations` Dagster asset (Silver → Gold)
-- `definitions.py` — Dagster entry point with sync + archive + gold export schedules
+- `ops/health.py` — pure health check logic (severity computation)
+- `ops/sync_health_asset.py` — `ftb_ops.sync_health` Dagster asset
+- `ops/export_health_asset.py` — `ftb_ops.export_health` Dagster asset
+- `ops/adapter_health_asset.py` — `ftb_ops.adapter_health` Dagster asset
+- `definitions.py` — Dagster entry point with sync + archive + gold export + ops health schedules
 
 **Phase 1 gate progress (40 criteria in v4.0 §Phase Gates):**
 - ✅ Dagster services healthy (3 services + EDS code server)
@@ -121,7 +125,7 @@ Data flows downward only. No layer reads a layer above itself.
 - ❌ Great Expectations — not configured
 - ✅ Bronze archive job — deployed, `archive_daily_schedule` at 02:00 UTC
 - ✅ Export round-trip (Silver → Gold → DuckDB) — deployed, `gold_export_hourly` at :15 past
-- ❌ Ops assets (adapter_health, export_health, sync_health) — not built
+- ✅ Ops assets — deployed, `ops_health_30m` schedule every 30 minutes
 - ❌ Runbooks FTB-01 through FTB-08 — not written
 - ❌ Ops credentials (calendar_writer, risk_writer, ch_ops_reader) — not created
 - ❌ Most collection sources — waiting on EDS adapters + sync bridge
@@ -133,12 +137,12 @@ Data flows downward only. No layer reads a layer above itself.
 1. ~~Build `empire_to_forge_sync` Dagster asset~~ ✅ DONE (2026-03-10) — 249 rows synced, deployed, 6h schedule active
 2. ~~Build Bronze archive job (`bronze_cold_archive`)~~ ✅ DONE (2026-03-10) — deployed, 02:00 UTC daily schedule
 3. ~~Build export round-trip (Silver → Gold via DuckDB Iceberg write)~~ ✅ DONE (2026-03-10) — 249 rows exported, hourly schedule
-4. Build ops assets (adapter_health, export_health, sync_health) — v4.0 §Solo Operator Operations
+4. ~~Build ops assets (adapter_health, export_health, sync_health)~~ ✅ DONE (2026-03-10) — deployed, 30m schedule
 5. Create ops credentials + calendar schema — v4.0 §Solo Operator Operations
 
 ---
 
-## v1 DATA SOURCES (11 target)
+## v1 DATA SOURCES (10 target)
 
 All sources are collected by EDS adapters and flow to FTB via `empire_to_forge_sync`. FTB does not build source adapters.
 
@@ -148,7 +152,7 @@ All sources are collected by EDS adapters and flow to FTB via `empire_to_forge_s
 | DeFiLlama | TVL, DEX volume, stablecoins, lending | 12h | EDS Track 3 | empire_to_forge_sync |
 | FRED | 23 macro series | 24h+ | EDS Track 3 | empire_to_forge_sync |
 | Tiingo | OHLCV spot prices | 6h | EDS Track 2 (transitional) | empire_to_forge_sync |
-| SoSoValue | ETF flows | 24h | EDS Track 3 (→ SEC EDGAR) | empire_to_forge_sync |
+| SEC EDGAR | Quarterly ETF structural metrics | Quarterly | EDS Track 3 | empire_to_forge_sync |
 | Etherscan | Exchange flows (ETH + Arbitrum) | 8h | EDS Track 1 | empire_to_forge_sync |
 | CoinPaprika | Market cap, metadata | 24h | EDS Track 3 | empire_to_forge_sync |
 | CoinMetrics | On-chain transfer volume | 24h | EDS Track 1 | empire_to_forge_sync |
@@ -156,7 +160,7 @@ All sources are collected by EDS adapters and flow to FTB via `empire_to_forge_s
 | Binance BLC-01 | Tick liquidations | Real-time | EDS (Server2) | BLC-01 rsync + sync |
 | CFTC COT | COT positioning | Weekly | EDS Track 3 | empire_to_forge_sync |
 
-**Redistribution blocked:** SoSoValue, CoinMetrics. Excluded from external products until flags changed.
+**Redistribution blocked:** CoinMetrics. Excluded from external products until flags changed.
 
 ---
 
@@ -251,7 +255,7 @@ bluefin (develop + test) → rsync → proxmox (rebuild + deploy)
 
 **Policy:** Any source whose ToS prohibits commercial use must be upgraded or excluded before Phase 6 gate.
 
-**Redistribution enforcement:** Sources marked `redistribution = false` in `forge.source_catalog` are excluded from all external data products. Currently blocked: SoSoValue, CoinMetrics.
+**Redistribution enforcement:** Sources marked `redistribution = false` in `forge.source_catalog` are excluded from all external data products. Currently blocked: CoinMetrics.
 
 **LH-06 trigger:** Tiingo redistribution clause must be verified before live collection.
 
@@ -277,6 +281,9 @@ Work blocked on physical infrastructure. When a blocker clears, delete the row a
 - **Pre-flight checks required.** Verify current schema/signature before modifying.
 - Build only what the prompt specifies. Flag adjacent improvements — do not implement.
 - Service modules: 800 lines max. Routers: 200 lines max.
+- **CLAUDE.md currency rule:** Any commit that adds, modifies, or removes a Dagster asset, deployed service, or phase gate item MUST update the CURRENT STATE section in the same commit.
+
+**Build from the design doc, not plan files.** `FromTheBridge_design_v4.0.md` is the single source of truth for what to build and how. Do not invoke `writing-plans` or create files in `docs/plans/`. The design doc IS the plan. If the design doc is missing detail needed to build, amend the design doc — do not create a separate document. Brainstorming skills are useful for structured Q&A to refine the SSOT, but their output goes into v4.0, not a plan file.
 
 **Python-specific:** `uv` + `pyproject.toml` + `uv.lock`. Testing: `pytest`. Linting: `ruff`.
 
@@ -340,30 +347,48 @@ EDS now collects Tiingo data (`eds_track_2_tiingo`). FTB adapter code removed. P
 
 ---
 
-## AGENT DELEGATION (MANDATORY)
+## AGENTS + SUBAGENTS
 
-| Task | Agent | Model |
-|------|-------|-------|
-| Pre-change schema/infra verification | `ftb-preflight` | haiku |
-| Post-change architecture enforcement | `ftb-code-reviewer` | sonnet |
-| Security scan (APIs, Docker, DB, creds) | `ftb-security` | sonnet |
+Agents add value for complex multi-step operations where independent verification catches mistakes. They waste time on simple changes where direct commands give a clear answer. Use subagents for **parallel independent work** (research, exploration, background verification) — not for serial compliance gates.
 
-Agents in `.claude/agents/`. Hooks in `.claude/hooks/`: `guard-clickhouse-reads.sh` (Rule 2), `guard-ddl.sh` (schema immutability), `guard-forbidden-targets.sh` (NAS/Server2).
+**Use agents when:**
+- Deploying new services or modifying infrastructure with multiple dependencies
+- Multi-file code changes that cross layer boundaries
+- Any change touching credentials, Docker networking, or database targeting
+- Parallel research across repos or large codebase exploration
 
-**MCP:** PostgreSQL read-only via `.mcp.json` (forge_reader → empire_postgres:5433).
+**Skip agents when:**
+- Checking container status, reading logs, verifying files
+- Single rsync + rebuild cycles with no new dependencies
+- Simple queries against known-working endpoints
+- Anything where 1-3 direct commands give a clear answer
+
+| Agent | Purpose | When to use |
+|-------|---------|-------------|
+| `ftb-preflight` (haiku) | Pre-change infra verification | New service deploys, credential changes, network modifications |
+| `ftb-code-reviewer` (sonnet) | Post-change architecture enforcement | Multi-file PRs, new asset patterns, layer boundary changes |
+| `ftb-security` (sonnet) | Security scanning | Credential changes, Docker config, API key handling |
+| `ftb-sync-validator` (sonnet) | Sync bridge contract validation | Changes to `empire_to_forge_sync` or writer code |
+
+Agents in `.claude/agents/`. All are read-only (`permissionMode: plan`), write JSON reports to `.claude/reports/`, use project memory.
+
+**Hooks** (`.claude/hooks/`): `guard-clickhouse-reads.sh` (Rule 2), `guard-ddl.sh` (schema immutability), `guard-forbidden-targets.sh` (NAS/Server2), `guard-sql-in-files.sh` (Rule 2 + DDL in file content), `post-commit-reminder.sh` (advisory CLAUDE.md reminder). Hooks are the safety net — they run automatically on every relevant tool call.
+
+**MCP:** PostgreSQL read-only via `.mcp.json` (forge_reader → empire_postgres:5433). `institutional-knowledge` for project memory. `context7` for library docs.
 
 ---
 
-## GSD + SUPERPOWERS (MANDATORY)
+## GSD + SUPERPOWERS
 
-| GSD Command | Required Superpowers |
-|-------------|---------------------|
+Superpowers are thinking frameworks that improve work quality. Use them when they add value to the task at hand — brainstorming before creative/architectural decisions, TDD for code that needs test coverage, verification before claiming completion, systematic debugging for non-obvious bugs.
+
+| GSD Command | Recommended Superpowers |
+|-------------|------------------------|
 | `/gsd:plan-phase` | `brainstorming` before plan |
-| `/gsd:execute-phase` | `brainstorming` + `test-driven-development` + `verification-before-completion` |
-| `/gsd:quick` | All three above |
+| `/gsd:execute-phase` | `test-driven-development` + `verification-before-completion` |
+| `/gsd:quick` | Use judgment — simple tasks skip ceremony |
 | `/gsd:debug` | `systematic-debugging` |
 | `/gsd:verify-work` | `verification-before-completion` |
-| Completion points | `requesting-code-review` |
 
 ---
 
