@@ -9,9 +9,13 @@ from dagster import ScheduleDefinition, define_asset_job
 from ftb.archive.archive_asset import bronze_cold_archive
 from ftb.archive.audit_asset import bronze_expiry_audit
 from ftb.export.export_asset import gold_observations
+from ftb.ops.adapter_health_asset import adapter_health
+from ftb.ops.export_health_asset import export_health
+from ftb.ops.sync_health_asset import sync_health
 from ftb.resources import (
     ch_empire_reader_resource,
     ch_export_reader_resource,
+    ch_ops_reader_resource,
     ch_writer_resource,
     iceberg_catalog_archive_resource,
     iceberg_catalog_gold_resource,
@@ -59,14 +63,40 @@ gold_hourly_schedule = ScheduleDefinition(
     job=gold_export_job,
 )
 
+# Ops health job + schedule (every 30 minutes)
+ops_health_job = define_asset_job(
+    name="ops_health_job",
+    selection=[sync_health, export_health, adapter_health],
+)
+
+ops_health_schedule = ScheduleDefinition(
+    name="ops_health_30m",
+    cron_schedule="*/30 * * * *",  # every 30 minutes
+    job=ops_health_job,
+)
+
 
 defs = dagster.Definitions(
-    assets=[empire_to_forge_sync, bronze_cold_archive, bronze_expiry_audit, gold_observations],
-    schedules=[sync_6h_schedule, archive_daily_schedule, gold_hourly_schedule],
+    assets=[
+        empire_to_forge_sync,
+        bronze_cold_archive,
+        bronze_expiry_audit,
+        gold_observations,
+        sync_health,
+        export_health,
+        adapter_health,
+    ],
+    schedules=[
+        sync_6h_schedule,
+        archive_daily_schedule,
+        gold_hourly_schedule,
+        ops_health_schedule,
+    ],
     resources={
         "ch_writer": ch_writer_resource,
         "ch_empire_reader": ch_empire_reader_resource,
         "ch_export_reader": ch_export_reader_resource,
+        "ch_ops_reader": ch_ops_reader_resource,
         "pg_forge": pg_forge_resource,
         "pg_forge_reader": pg_forge_reader_resource,
         "minio_bronze": minio_bronze_resource,

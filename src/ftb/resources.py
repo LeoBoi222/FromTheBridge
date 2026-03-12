@@ -130,6 +130,18 @@ def ch_export_reader_resource(context: InitResourceContext):
 
 
 @resource
+def ch_ops_reader_resource(context: InitResourceContext):
+    """ClickHouse client with ch_ops_reader credentials (SELECT-only, health assets)."""
+    return clickhouse_connect.get_client(
+        host="empire_clickhouse",
+        port=8123,
+        username="ch_ops_reader",
+        password=_read_secret("ch_ops_reader"),
+        database="forge",
+    )
+
+
+@resource
 def iceberg_catalog_gold_resource(context: InitResourceContext):
     """PyIceberg SqlCatalog for gold bucket."""
     pg_password = _read_secret("pg_forge_user")
