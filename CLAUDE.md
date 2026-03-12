@@ -128,6 +128,8 @@ Data flows downward only. No layer reads a layer above itself.
 - ✅ Ops assets — deployed, `ops_health_30m` schedule every 30 minutes
 - ✅ Runbooks FTB-01 through FTB-08 — written (`docs/runbooks/`)
 - ✅ Ops credentials (calendar_writer, risk_writer, ch_ops_reader) — created and verified
+- ✅ Calendar schema — event_calendar extended (system_id, severity, metadata, expires_at, recurring_rule, 14 event types)
+- ✅ NAS backup job — `scripts/ftb_backup.sh` (Dagster metadata DB + MinIO Bronze/Gold, GPG AES-256, 30-day retention)
 - ❌ Most collection sources — waiting on EDS adapters + sync bridge
 
 ---
@@ -135,9 +137,7 @@ Data flows downward only. No layer reads a layer above itself.
 ## NEXT ACTIONS (Phase 1)
 
 Remaining FTB-buildable work (not blocked on EDS):
-1. Calendar schema (event calendar extension) — v4.0 §Solo Operator Operations
-3. NAS backup job for MinIO + Dagster metadata DB
-4. Historical depth (`backfill_depth_days`) populated in metric_catalog
+1. Historical depth (`backfill_depth_days`) populated in metric_catalog
 5. Training window viability report
 6. C2 archive credentials isolation (`MINIO_BRONZE_ARCHIVE_USER`)
 7. C2 reprocessing test (end-to-end path verification)
