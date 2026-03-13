@@ -27,7 +27,7 @@ FromTheBridge is a data lakehouse for crypto market intelligence — a 9-layer s
 
 ## GOVERNANCE SEQUENCE
 
-Every task, regardless of apparent simplicity:
+These steps are non-negotiable. No rationalizing past them. No "this case is simple enough to skip." Every task, regardless of apparent simplicity:
 
 1. **Read SSOT** — find the relevant v4.0 section. If it doesn't exist, flag it.
 2. **State 3-bullet plan** — what you'll do, in what order. Wait for confirmation when touching credentials, Docker networking, database targeting, or changes spanning 3+ systems.
@@ -37,6 +37,8 @@ Every task, regardless of apparent simplicity:
 6. **Update state records** — any commit that changes phase status, deployed services, or clears a blocker must update `.claude/state/phase-status.md` in the same commit. Not a follow-up commit — the same one. Gate criteria pass/fail updates go in v4.0 §Phase Gates at gate passage events. If you can't update state in the same commit, stop and flag.
 
 **Build from the design doc, not plan files.** v4.0 is the plan. Do not create `docs/plans/` files. If v4.0 is missing detail, amend v4.0.
+
+**Code discipline:** Service modules: 800 lines max. Routers: 200 lines max. Re-plan if exceeding.
 
 ---
 
