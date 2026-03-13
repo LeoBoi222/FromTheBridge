@@ -29,12 +29,15 @@ FromTheBridge is a data lakehouse for crypto market intelligence — a 9-layer s
 
 These steps are non-negotiable. No rationalizing past them. No "this case is simple enough to skip." Every task, regardless of apparent simplicity:
 
-1. **Read SSOT** — find the relevant v4.0 section. If it doesn't exist, flag it.
-2. **State 3-bullet plan** — what you'll do, in what order. Wait for confirmation when touching credentials, Docker networking, database targeting, or changes spanning 3+ systems.
-3. **Pre-flight** — verify current state before modifying. Do not assume.
-4. **Execute** — build only what the prompt specifies. Flag adjacent improvements — do not implement.
-5. **Verify against SSOT** — confirm the result matches v4.0, not just "it works."
-6. **Update state records** — any commit that changes phase status, deployed services, or clears a blocker must update `.claude/state/phase-status.md` in the same commit. Not a follow-up commit — the same one. Gate criteria pass/fail updates go in v4.0 §Phase Gates at gate passage events. If you can't update state in the same commit, stop and flag.
+1. **Read phase-status.md** — read `.claude/state/phase-status.md`. Know where you are, what's blocked, and what's next before doing anything.
+2. **Read SSOT** — find the relevant v4.0 section for the task. If it doesn't exist, flag it.
+3. **State 3-bullet plan** — what you'll do, in what order. Wait for confirmation when touching credentials, Docker networking, database targeting, or changes spanning 3+ systems.
+4. **Pre-flight** — verify current state before modifying. Do not assume.
+5. **Execute** — build only what the prompt specifies. Flag adjacent improvements — do not implement.
+6. **Verify against SSOT** — confirm the result matches v4.0, not just "it works."
+7. **Update state records** — any commit that changes phase status, deployed services, or clears a blocker must update `.claude/state/phase-status.md` in the same commit. Not a follow-up commit — the same one. Gate criteria pass/fail updates go in v4.0 §Phase Gates at gate passage events. If you can't update state in the same commit, stop and flag.
+
+**Session-end rule:** When Stephen asks for a handoff doc, update `phase-status.md` before producing it. Update gate criteria only with verified evidence. Update NEXT ACTIONS to reflect current priorities, completed items, and anything learned during the session — even if there are no commits. The handoff doc summarizes the session; `phase-status.md` is what the next session reads.
 
 **Build from the design doc, not plan files.** v4.0 is the plan. Do not create `docs/plans/` files. If v4.0 is missing detail, amend v4.0.
 
@@ -123,7 +126,7 @@ Hooks (`.claude/hooks/`) fire automatically — no invocation needed. They enfor
 
 ## CURRENT STATE
 
-Phase status, deployed infrastructure, and blockers: `.claude/state/phase-status.md` (version controlled, updated per §GOVERNANCE SEQUENCE step 6). Detailed gate criteria: v4.0 §Phase Gates.
+Phase status, deployed infrastructure, and blockers: `.claude/state/phase-status.md` (version controlled, updated per §GOVERNANCE SEQUENCE step 7). Detailed gate criteria: v4.0 §Phase Gates.
 
 ---
 
