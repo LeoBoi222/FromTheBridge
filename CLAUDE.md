@@ -132,15 +132,15 @@ Data flows downward only. No layer reads a layer above itself.
 - ✅ NAS backup job — `scripts/ftb_backup.sh` (Dagster metadata DB + MinIO Bronze/Gold, GPG AES-256, 30-day retention)
 - ✅ Historical depth — `backfill_depth_days` populated for all 74 active metrics
 - ✅ Training window viability — `.claude/reports/T5_training_windows.json` (3 ready, 2 conditional, 0 blocked)
+- ✅ C2 archive credentials — bidirectional isolation verified: `bronze_writer` scoped to `bronze-hot` only (policy fixed 2026-03-13), `bronze-archive-rw` scoped to `bronze-archive` only. `scripts/setup_minio_service_accounts.sh` created.
+- ✅ C2 reprocessing test — 8-step procedure documented (`docs/runbooks/FTB-09-archive-reprocessing.md`), executed with evidence (`.claude/reports/C2_reprocessing_test.json`). Steps 1-7 PASS, Step 8 (features) Phase 2 forward reference.
 - ❌ Most collection sources — waiting on EDS adapters + sync bridge
 
 ---
 
 ## NEXT ACTIONS (Phase 1)
 
-Remaining FTB-buildable work (not blocked on EDS):
-1. C2 archive credentials isolation (`MINIO_BRONZE_ARCHIVE_USER`)
-2. C2 reprocessing test (end-to-end path verification)
+All FTB-buildable Phase 1 work is complete. Remaining Phase 1 gate criteria are blocked on EDS delivering adapter data through `empire_to_forge_sync` (all 11 sources need Silver rows).
 
 Blocked on EDS: Most collection sources (all 11 sources need Silver rows via `empire_to_forge_sync`). BLC-01 downstream pipeline (file sensor → aggregation → `empire.observations`) is an EDS responsibility.
 
@@ -272,7 +272,7 @@ Work blocked on physical infrastructure. When a blocker clears, delete the row a
 | Blocker | What's Waiting | Unblocks |
 |---------|---------------|----------|
 | Server2 OS upgrade (5800X + 64GB + 2TB NVMe) | Pruned ETH failover, expanded BLC-01 storage | EDS-0 gate |
-| ai-srv-01 hardware verification (mobo M.2 slots, RAM, SSD TBW) | UTXO backfill, ML training infrastructure | Phase 4 gate |
+| ~~ai-srv-01 hardware verification~~ | ~~UTXO backfill, ML training infrastructure~~ | ✅ Operational (2026-03-12) |
 | ~~Tiingo migration to EDS~~ | ~~FTB adapter cleanup~~ | ✅ Complete (2026-03-10) |
 
 **Pipeline retired (2026-03-10).** EDS/LH/ML items cancelled from `bridge.pipeline_items` — tracked by design docs (v4.0 + EDS_design_v1.1). Nexus-Council items (B*, PL*, V*, R2) remain in pipeline for that project's use.

@@ -4732,7 +4732,7 @@ EDS users (`eds_writer`, `eds_reader`) self-limit to matching profiles per EDS d
 
 | Account | Policy | Mounted On |
 |---|---|---|
-| `bronze_writer` | PutObject on `bronze-hot/*` only | `empire_dagster_code` |
+| `bronze_writer` | PutObject + GetObject + ListBucket on `bronze-hot/*` only (PyIceberg requires GetObject + ListBucket for metadata discovery on append) | `empire_dagster_code` |
 | `bronze_archive_writer` | PutObject + GetObject + ListBucket on `bronze-archive/*` only (C2) | `empire_dagster_code` (archive asset only) |
 | `gold_reader` | GetObject + ListBucket on `gold/*` + `marts/*` | `forge_compute`, `empire_fastapi` |
 | `export_writer` | PutObject + GetObject + ListBucket + DeleteObject on `gold/*` | `empire_dagster_code` |
