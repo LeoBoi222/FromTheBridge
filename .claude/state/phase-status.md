@@ -27,7 +27,7 @@
 
 ## Gate Criteria (Phase 1)
 
-17 of 40 criteria passing. Updated 2026-03-14.
+18 of 40 criteria passing. Updated 2026-03-14.
 
 | Status | Criteria |
 |--------|----------|
@@ -37,7 +37,8 @@
 | ✅ (0012) | Migration complete (35 UPDATE + 4 INSERT, 41 eds_derived total → 39 after 0014 DeFi correction + 0015 COT), CFTC COT complete (4 of 4 metrics in catalog) |
 | ❌ EDS-blocked | live collection, rejection rate, coverage, Tiingo history (2019 not 2014), wei fix, tier promotion (0 signal_eligible), PF-6 utilization unit, FRED series (Gold/MOVE/BOJ — not yet in empire.observations), DeFiLlama yields, ingested_at correctness, priority-1 backfill, BLC-01 rsync |
 | ✅ (new) | Export round-trip verified: Silver → Gold export → DuckDB read. 5,746 rows across 4 domains (derivatives/6, defi/2, flows/3, macro/25). PyIceberg→Arrow→DuckDB hybrid read (ADR-002 updated). |
-| ❌ Needs data | FINAL query benchmarks (50k/500k), export benchmark baseline, GE checkpoint, dead letter nullability, C2 archive/expiry/partition jobs, C2 reprocessing test |
+| ✅ (new) | GE checkpoint: bronze_core suite runs on every sync. 6 expectations execute (2 conditional with no triggers — no range bounds defined). Dead letter routing confirmed: 63,543 UNKNOWN_INSTRUMENT + 3,910 DUPLICATE_OBSERVATION with valid rejection codes. |
+| ❌ Needs data | FINAL query benchmarks (50k/500k), export benchmark baseline, dead letter nullability, C2 archive/expiry/partition jobs, C2 reprocessing test |
 
 Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 
@@ -69,7 +70,7 @@ Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 
 1. ~~**Export round-trip verification**~~ — **COMPLETE (2026-03-14).** 5,746 rows, 36 metrics, 4 domains. ADR-002 updated: PyIceberg→Arrow→DuckDB locked as permanent read path.
 2. **FINAL query benchmarks** (50k/500k row targets)
-3. **GE checkpoint** (bronze_core suite)
+3. ~~**GE checkpoint**~~ — **COMPLETE (2026-03-14).** bronze_core suite running on every sync, dead letter routing verified.
 4. **Tier promotion run**
 5. ~~**Activate NAS backup timer**~~ — **COMPLETE (2026-03-14).** systemd timer enabled, daily 04:00 UTC with 5m jitter.
 6. ~~**Verify C2 archive credential isolation**~~ — **COMPLETE (2026-03-14).** `bronze-archive-rw` write to `bronze-hot` denied. Policy scoped correctly.
