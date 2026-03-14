@@ -1,16 +1,19 @@
 """Tests for bronze_cold_archive asset logic."""
 
+import hashlib
 from datetime import date, datetime, timedelta, timezone
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 import pyarrow as pa
 import pytest
 
 from ftb.archive.archive_asset import (
+    _arrow_ipc_bytes,
     archive_partition,
     compute_archive_window,
     discover_hot_partitions,
     log_archive_result,
+    verify_archive_checksum,
 )
 
 
@@ -164,3 +167,108 @@ class TestLogArchiveResult:
         assert "INSERT INTO forge.bronze_archive_log" in sql
         assert "ON CONFLICT" in sql
         mock_conn.commit.assert_called_once()
+
+
+class TestVerifyArchiveChecksum:
+    def _make_arrow_table(self):
+        now = datetime.now(timezone.utc)
+        return pa.table({
+            "source_id": ["tiingo"],
+            "metric_id": ["price.spot.close_usd"],
+            "instrument_id": ["BTC-USD"],
+            "observed_at": pa.array([now], type=pa.timestamp("us", tz="UTC")),
+            "value": [48000.0],
+            "ingested_at": pa.array([now], type=pa.timestamp("us", tz="UTC")),
+            "partition_date": ["2026-03-01"],
+        })
+
+    def test_checksum_match_updates_verified_true(self):
+        arrow_table = self._make_arrow_table()
+        expected_checksum = hashlib.sha256(_arrow_ipc_bytes(arrow_table)).hexdigest()
+
+        mock_catalog = MagicMock()
+        mock_archive_table = MagicMock()
+        mock_catalog.load_table.return_value = mock_archive_table
+        mock_scan = MagicMock()
+        mock_archive_table.scan.return_value = mock_scan
+        mock_scan.to_arrow.return_value = arrow_table
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = verify_archive_checksum(
+            mock_catalog, mock_conn,
+            "tiingo", "price.spot.close_usd", "2026-03-01",
+            expected_checksum,
+        )
+        assert result is True
+        # Verify UPDATE was called with True
+        sql = mock_cursor.execute.call_args[0][0]
+        assert "UPDATE forge.bronze_archive_log" in sql
+        assert "checksum_verified" in sql
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[0] is True  # checksum_verified = True
+
+    def test_checksum_mismatch_updates_verified_false(self):
+        arrow_table = self._make_arrow_table()
+
+        mock_catalog = MagicMock()
+        mock_archive_table = MagicMock()
+        mock_catalog.load_table.return_value = mock_archive_table
+        mock_scan = MagicMock()
+        mock_archive_table.scan.return_value = mock_scan
+        mock_scan.to_arrow.return_value = arrow_table
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = verify_archive_checksum(
+            mock_catalog, mock_conn,
+            "tiingo", "price.spot.close_usd", "2026-03-01",
+            "wrong_checksum_value",
+        )
+        assert result is False
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[0] is False  # checksum_verified = False
+
+    def test_empty_readback_returns_false(self):
+        mock_catalog = MagicMock()
+        mock_archive_table = MagicMock()
+        mock_catalog.load_table.return_value = mock_archive_table
+        mock_scan = MagicMock()
+        mock_archive_table.scan.return_value = mock_scan
+        mock_scan.to_arrow.return_value = pa.table({
+            "source_id": pa.array([], type=pa.string()),
+            "metric_id": pa.array([], type=pa.string()),
+            "instrument_id": pa.array([], type=pa.string()),
+            "observed_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+            "value": pa.array([], type=pa.float64()),
+            "ingested_at": pa.array([], type=pa.timestamp("us", tz="UTC")),
+            "partition_date": pa.array([], type=pa.string()),
+        })
+
+        mock_conn = MagicMock()
+        result = verify_archive_checksum(
+            mock_catalog, mock_conn,
+            "tiingo", "price.spot.close_usd", "2026-03-01",
+            "some_checksum",
+        )
+        assert result is False
+        mock_conn.cursor.assert_not_called()
+
+
+class TestArrowIpcBytes:
+    def test_deterministic_output(self):
+        now = datetime.now(timezone.utc)
+        table = pa.table({
+            "source_id": ["tiingo"],
+            "observed_at": pa.array([now], type=pa.timestamp("us", tz="UTC")),
+        })
+        b1 = _arrow_ipc_bytes(table)
+        b2 = _arrow_ipc_bytes(table)
+        assert b1 == b2
+        assert len(b1) > 0

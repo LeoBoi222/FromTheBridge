@@ -6,6 +6,7 @@ Window: today-9 to today-2 (2-day lag, 88-day safety margin before 90-day hot ex
 """
 
 import hashlib
+import logging
 from datetime import date, timedelta
 
 import pyarrow as pa
@@ -16,6 +17,17 @@ from ftb.writers.bronze import (
     BRONZE_HOT_TABLE,
     ensure_bronze_table,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _arrow_ipc_bytes(arrow_table: pa.Table) -> bytes:
+    """Serialize an Arrow table to IPC stream bytes for deterministic checksumming."""
+    sink = pa.BufferOutputStream()
+    writer = pa.ipc.new_stream(sink, arrow_table.schema)
+    writer.write_table(arrow_table)
+    writer.close()
+    return sink.getvalue().to_pybytes()
 
 
 def compute_archive_window(today: date) -> tuple[date, date]:
@@ -92,12 +104,8 @@ def archive_partition(
     if arrow_table.num_rows == 0:
         return {"row_count": 0, "skipped": True}
 
-    # Compute checksum from the Arrow table bytes
-    sink = pa.BufferOutputStream()
-    writer = pa.ipc.new_stream(sink, arrow_table.schema)
-    writer.write_table(arrow_table)
-    writer.close()
-    raw_bytes = sink.getvalue().to_pybytes()
+    # Compute checksum from the Arrow IPC bytes
+    raw_bytes = _arrow_ipc_bytes(arrow_table)
     checksum = hashlib.sha256(raw_bytes).hexdigest()
 
     # Append to archive table
@@ -170,6 +178,59 @@ def log_archive_result(
     pg_conn.commit()
 
 
+def verify_archive_checksum(
+    archive_catalog,
+    pg_conn,
+    source_id: str,
+    metric_id: str,
+    partition_date: str,
+    expected_checksum: str,
+) -> bool:
+    """Read back the archived partition, recompute checksum, update bronze_archive_log.
+
+    Returns True if checksums match.
+    """
+    archive_table = ensure_bronze_table(archive_catalog, BRONZE_ARCHIVE_TABLE)
+    scan = archive_table.scan(
+        row_filter=(
+            f"source_id == '{source_id}' and "
+            f"metric_id == '{metric_id}' and "
+            f"partition_date == '{partition_date}'"
+        ),
+    )
+    readback = scan.to_arrow()
+
+    if readback.num_rows == 0:
+        logger.error(
+            "Verification failed: no rows in archive for %s/%s/%s",
+            source_id, metric_id, partition_date,
+        )
+        return False
+
+    actual_checksum = hashlib.sha256(_arrow_ipc_bytes(readback)).hexdigest()
+    verified = actual_checksum == expected_checksum
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE forge.bronze_archive_log
+            SET checksum_verified = %s, verified_at = NOW()
+            WHERE source_id = %s AND metric_id = %s AND partition_date = %s
+            """,
+            (verified, source_id, metric_id, partition_date),
+        )
+    pg_conn.commit()
+
+    if not verified:
+        logger.error(
+            "Checksum mismatch for %s/%s/%s: expected %s, got %s",
+            source_id, metric_id, partition_date,
+            expected_checksum, actual_checksum,
+        )
+
+    return verified
+
+
 @asset(
     group_name="bronze_archive",
     required_resource_keys={"iceberg_catalog_hot", "iceberg_catalog_archive", "pg_forge"},
@@ -196,6 +257,8 @@ def bronze_cold_archive(context: AssetExecutionContext) -> None:
 
     archived_count = 0
     skipped_count = 0
+    verified_count = 0
+    failed_count = 0
     total_rows = 0
 
     for part in partitions:
@@ -219,6 +282,24 @@ def bronze_cold_archive(context: AssetExecutionContext) -> None:
             meta,
             run_id,
         )
+
+        # Read back and verify checksum
+        ok = verify_archive_checksum(
+            archive_catalog,
+            pg_conn,
+            part["source_id"],
+            part["metric_id"],
+            part["partition_date"],
+            meta["checksum"],
+        )
+        if ok:
+            verified_count += 1
+        else:
+            failed_count += 1
+            context.log.error(
+                f"Checksum verification FAILED: {part['source_id']}/{part['partition_date']}/{part['metric_id']}"
+            )
+
         archived_count += 1
         total_rows += meta["row_count"]
 
@@ -228,9 +309,12 @@ def bronze_cold_archive(context: AssetExecutionContext) -> None:
         "partitions_discovered": MetadataValue.int(len(partitions)),
         "partitions_archived": MetadataValue.int(archived_count),
         "partitions_skipped": MetadataValue.int(skipped_count),
+        "partitions_verified": MetadataValue.int(verified_count),
+        "verification_failures": MetadataValue.int(failed_count),
         "total_rows_archived": MetadataValue.int(total_rows),
     })
 
     context.log.info(
-        f"Archive complete: {archived_count} archived, {skipped_count} skipped, {total_rows} rows"
+        f"Archive complete: {archived_count} archived, {verified_count} verified, "
+        f"{failed_count} failed, {skipped_count} skipped, {total_rows} rows"
     )

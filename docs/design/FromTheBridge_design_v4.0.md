@@ -4279,7 +4279,7 @@ per-instrument partitioning).
 | BLC-01 rsync | Option B implemented — ≥7 `.complete` files in proxmox landing directory |
 | Training window viability | Architect-signed report at `.claude/reports/T5_training_windows.json` with per-model floor dates and row counts |
 | Dead letter triage | No unresolved dead letters older than 7 days in `forge.dead_letter` |
-| Missing FRED series | HY OAS (`BAMLH0A0HYM2`), Gold (`GOLDAMGBD228NLBM`), MOVE Index (`MOVE`) all have Silver rows with historical depth |
+| Missing FRED series | HY OAS (`BAMLH0A0HYM2`), Gold (Tiingo XAUUSD, 2020+), BOJ assets (`JPNASSETS`, monthly) all have Silver rows with historical depth. MOVE removed — permanent gap, no free source. |
 | Ops assets | `ftb_ops.adapter_health` materializing for all configured sources; `ftb_ops.export_health` materializing; `shared_ops.sync_health` operational |
 | Runbooks | FTB-01 through FTB-08 runbooks written and tested (see §Solo Operator Operations) |
 | Ops credentials | `calendar_writer`, `risk_writer`, and `ch_ops_reader` roles created and verified |

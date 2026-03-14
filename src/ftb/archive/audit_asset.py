@@ -9,7 +9,8 @@ from datetime import date, timedelta
 
 from dagster import AssetExecutionContext, MetadataValue, asset
 
-from ftb.writers.bronze import BRONZE_HOT_TABLE, ensure_bronze_table
+from ftb.archive.partition_discovery import discover_partitions_duckdb
+from ftb.writers.bronze import BRONZE_HOT_TABLE
 
 
 def find_at_risk_partitions(
@@ -17,32 +18,30 @@ def find_at_risk_partitions(
     pg_conn,
     today: date,
     table_name: str = BRONZE_HOT_TABLE,
-) -> list[dict]:
+) -> tuple[list[dict], float]:
     """Find hot partitions within 5 days of 90-day expiry that aren't archived.
 
     At-risk = partition_date < today - 85 AND not in bronze_archive_log.
+    Uses DuckDB partition discovery for fast metadata scanning.
+
+    Returns (at_risk_list, discovery_elapsed_ms).
     """
     cutoff = today - timedelta(days=85)
     cutoff_str = cutoff.isoformat()
 
-    # Get all hot partitions older than cutoff
-    table = ensure_bronze_table(hot_catalog, table_name)
-    scan = table.scan(
-        row_filter=f"partition_date < '{cutoff_str}'",
-        selected_fields=("source_id", "metric_id", "partition_date"),
+    # Fast partition discovery via DuckDB over Iceberg metadata
+    hot_partitions_list, elapsed_ms = discover_partitions_duckdb(
+        hot_catalog,
+        table_name,
+        partition_date_filter=f"partition_date < '{cutoff_str}'",
     )
-
-    hot_partitions = set()
-    for batch in scan.to_arrow_batch_reader():
-        for i in range(batch.num_rows):
-            hot_partitions.add((
-                batch.column("source_id")[i].as_py(),
-                batch.column("metric_id")[i].as_py(),
-                batch.column("partition_date")[i].as_py(),
-            ))
+    hot_partitions = {
+        (p["source_id"], p["metric_id"], p["partition_date"])
+        for p in hot_partitions_list
+    }
 
     if not hot_partitions:
-        return []
+        return [], elapsed_ms
 
     # Check which ones are already archived
     with pg_conn.cursor() as cur:
@@ -60,7 +59,7 @@ def find_at_risk_partitions(
     return [
         {"source_id": s, "metric_id": m, "partition_date": d}
         for s, m, d in sorted(at_risk)
-    ]
+    ], elapsed_ms
 
 
 @asset(
@@ -73,17 +72,21 @@ def bronze_expiry_audit(context: AssetExecutionContext) -> None:
 
     Flags partitions with partition_date < today-85 (5 days before 90-day expiry)
     that are NOT in bronze_archive_log.
+    Uses DuckDB over Iceberg metadata for partition discovery (C2 gate criterion).
     """
     today = date.today()
     hot_catalog = context.resources.iceberg_catalog_hot
     pg_conn = context.resources.pg_forge
 
-    at_risk = find_at_risk_partitions(hot_catalog, pg_conn, today)
+    at_risk, discovery_ms = find_at_risk_partitions(hot_catalog, pg_conn, today)
 
     context.add_output_metadata({
         "at_risk_partition_count": MetadataValue.int(len(at_risk)),
         "cutoff_date": MetadataValue.text((today - timedelta(days=85)).isoformat()),
+        "partition_discovery_ms": MetadataValue.float(round(discovery_ms, 1)),
     })
+
+    context.log.info(f"Partition discovery completed in {discovery_ms:.1f}ms")
 
     if at_risk:
         context.log.warning(
