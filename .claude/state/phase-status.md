@@ -73,10 +73,32 @@ Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 
 ## Next Actions
 
-1. ~~**Export round-trip verification**~~ — **COMPLETE (2026-03-14).** 5,746 rows, 36 metrics, 4 domains. ADR-002 updated: PyIceberg→Arrow→DuckDB locked as permanent read path.
-2. ~~**FINAL query benchmarks**~~ — **COMPLETE (2026-03-14).** 50k: 0.349s, 500k: 0.746s. Both well under threshold.
-3. ~~**GE checkpoint**~~ — **COMPLETE (2026-03-14).** bronze_core suite running on every sync, dead letter routing verified.
-4. **Tier promotion run**
-5. ~~**Activate NAS backup timer**~~ — **COMPLETE (2026-03-14).** systemd timer enabled, daily 04:00 UTC with 5m jitter.
-6. ~~**Verify C2 archive credential isolation**~~ — **COMPLETE (2026-03-14).** `bronze-archive-rw` write to `bronze-hot` denied. Policy scoped correctly.
-7. ~~**Tiingo backfill**~~ — **COMPLETE (2026-03-14).** BTC from 2014, ETH from 2015, SOL from 2020. 20,584 obs in empire. Pending next sync cycle to forge.
+**All FTB-side Phase 1 work is complete.** 25/40 gates passing. Remaining 15 are EDS-blocked.
+
+**EDS work required to unblock remaining gates:**
+1. Live collection — all production agents collecting at specified cadence
+2. Rejection rate — global < 5%
+3. Coverage — all active metrics ≥ 90% completeness
+4. Wei fix — Gate.io exchange flows in USD confirmed
+5. Tier promotion — requires 90+ days of live collection data, ≥12 instruments at signal_eligible
+6. PF-6 utilization unit — DeFiLlama `/yields` verification
+7. DeFiLlama yields Silver — yields adapter producing Silver rows
+8. FRED series — BOJ balance sheet (`JPNASSETS`) not yet in empire.observations
+9. `ingested_at` correctness — CFTC COT wall-clock vs observed_at verification
+10. Priority-1 backfill — Coinalyze, DeFiLlama, BGeometrics, Binance bulk ≥2yr Silver
+11. BLC-01 rsync — ≥7 `.complete` files in proxmox landing directory
+
+**Pending EDS delivery** (add catalog row ONLY after metric appears in `empire.observations`):
+- `defi.protocol.revenue_usd_24h` — not yet in empire.observations
+- `macro.liquidity.boj_balance_sheet` — FRED series not yet in empire.observations
+
+**Completed items (this session + prior):**
+- ~~Export round-trip verification~~ — COMPLETE (2026-03-14)
+- ~~FINAL query benchmarks~~ — COMPLETE (2026-03-14)
+- ~~GE checkpoint~~ — COMPLETE (2026-03-14)
+- ~~Export benchmark baseline~~ — COMPLETE (2026-03-14)
+- ~~C2 archive/expiry/partition jobs~~ — COMPLETE (2026-03-14)
+- ~~C2 reprocessing test~~ — COMPLETE (2026-03-13, evidence captured 2026-03-14)
+- ~~NAS backup timer~~ — COMPLETE (2026-03-14)
+- ~~C2 archive credential isolation~~ — COMPLETE (2026-03-14)
+- ~~Tiingo backfill~~ — COMPLETE (2026-03-14)
