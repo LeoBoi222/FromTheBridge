@@ -27,7 +27,7 @@
 
 ## Gate Criteria (Phase 1)
 
-19 of 40 criteria passing. Updated 2026-03-14.
+20 of 40 criteria passing. Updated 2026-03-14.
 
 | Status | Criteria |
 |--------|----------|
@@ -35,7 +35,8 @@
 | ✅ (new) | Sync auto-flow verified (38/38 metrics, 100% coverage, 7,960 obs written) |
 | ✅ | NAS backup (systemd timer active, daily 04:00 UTC), C2 archive credential isolation verified (bronze-archive-rw cannot write bronze-hot) |
 | ✅ (0012) | Migration complete (35 UPDATE + 4 INSERT, 41 eds_derived total → 39 after 0014 DeFi correction + 0015 COT), CFTC COT complete (4 of 4 metrics in catalog) |
-| ❌ EDS-blocked | live collection, rejection rate, coverage, Tiingo history (2019 not 2014), wei fix, tier promotion (0 signal_eligible), PF-6 utilization unit, FRED series (Gold/MOVE/BOJ — not yet in empire.observations), DeFiLlama yields, ingested_at correctness, priority-1 backfill, BLC-01 rsync |
+| ✅ (new) | Tiingo deep backfill: BTC-USD from 2014-01-01 (8,902 obs), ETH-USD from 2015-08-08 (7,702 obs), SOL-USD from 2020-08-23 (3,980 obs). 20,584 total in empire. Will flow to forge on next sync cycle. |
+| ❌ EDS-blocked | live collection, rejection rate, coverage, wei fix, tier promotion (0 signal_eligible), PF-6 utilization unit, FRED series (Gold/BOJ — not yet in empire.observations), DeFiLlama yields, ingested_at correctness, priority-1 backfill, BLC-01 rsync |
 | ✅ (new) | Export round-trip verified: Silver → Gold export → DuckDB read. 5,746 rows across 4 domains (derivatives/6, defi/2, flows/3, macro/25). PyIceberg→Arrow→DuckDB hybrid read (ADR-002 updated). |
 | ✅ (new) | GE checkpoint: bronze_core suite runs on every sync. 6 expectations execute (2 conditional with no triggers — no range bounds defined). Dead letter routing confirmed: 63,543 UNKNOWN_INSTRUMENT + 3,910 DUPLICATE_OBSERVATION with valid rejection codes. |
 | ✅ (new) | Dead letter nullability: test_defi_lending_nullability_gate passes — null borrow_apy valid, null utilization_rate dead-lettered as NULL_VIOLATION. |
@@ -56,7 +57,7 @@ Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 - `defi.protocol.revenue_usd_24h` — not yet in empire.observations
 - `macro.commodity.gold` — FRED series not yet in empire.observations
 - `macro.liquidity.boj_balance_sheet` — FRED series not yet in empire.observations
-- `macro.rates.move_index` — FRED series not yet in empire.observations
+- ~~`macro.rates.move_index`~~ — **REMOVED (2026-03-14).** No free source. Gate criteria updated in v4.0.
 
 **Decisions locked:**
 - `eds_derived` replaces old source entries in forge catalog — does not append.
@@ -75,4 +76,4 @@ Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 4. **Tier promotion run**
 5. ~~**Activate NAS backup timer**~~ — **COMPLETE (2026-03-14).** systemd timer enabled, daily 04:00 UTC with 5m jitter.
 6. ~~**Verify C2 archive credential isolation**~~ — **COMPLETE (2026-03-14).** `bronze-archive-rw` write to `bronze-hot` denied. Policy scoped correctly.
-7. **Tiingo backfill** — current earliest is 2019-01-01. Gate requires BTC from 2014, ETH from 2015. Coordinate with EDS.
+7. ~~**Tiingo backfill**~~ — **COMPLETE (2026-03-14).** BTC from 2014, ETH from 2015, SOL from 2020. 20,584 obs in empire. Pending next sync cycle to forge.
