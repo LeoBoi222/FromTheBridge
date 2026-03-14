@@ -1,0 +1,30 @@
+{
+  "benchmark": "FINAL_query_performance",
+  "run_at": "2026-03-14T22:00:00+00:00",
+  "environment": "proxmox / empire_clickhouse (ClickHouse 24.3.18.7)",
+  "query_pattern": "SELECT ... FROM forge.observations FINAL WHERE ingested_at > :wm AND ingested_at <= :ts - 3min ORDER BY metric_id, instrument_id, observed_at",
+  "gate_criteria": {
+    "50k": "wall time < 10 seconds",
+    "500k": "wall time < 60 seconds (simulated backfill)"
+  },
+  "results": {
+    "50k": {
+      "target_rows": 50000,
+      "actual_rows": 50000,
+      "times_seconds": [0.347, 0.349, 0.352],
+      "median_seconds": 0.349,
+      "threshold_seconds": 10.0,
+      "passed": true
+    },
+    "500k": {
+      "target_rows": 500000,
+      "actual_rows": 500000,
+      "times_seconds": [0.745, 0.746, 0.747],
+      "median_seconds": 0.746,
+      "threshold_seconds": 60.0,
+      "passed": true
+    }
+  },
+  "all_passed": true,
+  "notes": "Synthetic data with source_id='__benchmark__', ingested_at=2099-01-01. 3 runs each, median taken. Cleanup via DELETE FROM forge.observations WHERE source_id='__benchmark__'. ReplacingMergeTree FINAL dedup on watermark-scoped delta is sub-second even at 500k."
+}

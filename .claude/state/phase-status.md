@@ -27,7 +27,7 @@
 
 ## Gate Criteria (Phase 1)
 
-20 of 40 criteria passing. Updated 2026-03-14.
+22 of 40 criteria passing. Updated 2026-03-14.
 
 | Status | Criteria |
 |--------|----------|
@@ -40,7 +40,8 @@
 | ✅ (new) | Export round-trip verified: Silver → Gold export → DuckDB read. 5,746 rows across 4 domains (derivatives/6, defi/2, flows/3, macro/25). PyIceberg→Arrow→DuckDB hybrid read (ADR-002 updated). |
 | ✅ (new) | GE checkpoint: bronze_core suite runs on every sync. 6 expectations execute (2 conditional with no triggers — no range bounds defined). Dead letter routing confirmed: 63,543 UNKNOWN_INSTRUMENT + 3,910 DUPLICATE_OBSERVATION with valid rejection codes. |
 | ✅ (new) | Dead letter nullability: test_defi_lending_nullability_gate passes — null borrow_apy valid, null utilization_rate dead-lettered as NULL_VIOLATION. |
-| ❌ Needs data | FINAL query benchmarks (50k/500k), export benchmark baseline, C2 archive/expiry/partition jobs, C2 reprocessing test |
+| ✅ (new) | FINAL query benchmarks: 50k in 0.349s (< 10s), 500k in 0.746s (< 60s). Report at `.claude/reports/benchmark_final_query.json`. |
+| ❌ Needs data | Export benchmark baseline, C2 archive/expiry/partition jobs, C2 reprocessing test |
 
 Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 
@@ -71,7 +72,7 @@ Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 ## Next Actions
 
 1. ~~**Export round-trip verification**~~ — **COMPLETE (2026-03-14).** 5,746 rows, 36 metrics, 4 domains. ADR-002 updated: PyIceberg→Arrow→DuckDB locked as permanent read path.
-2. **FINAL query benchmarks** (50k/500k row targets)
+2. ~~**FINAL query benchmarks**~~ — **COMPLETE (2026-03-14).** 50k: 0.349s, 500k: 0.746s. Both well under threshold.
 3. ~~**GE checkpoint**~~ — **COMPLETE (2026-03-14).** bronze_core suite running on every sync, dead letter routing verified.
 4. **Tier promotion run**
 5. ~~**Activate NAS backup timer**~~ — **COMPLETE (2026-03-14).** systemd timer enabled, daily 04:00 UTC with 5m jitter.
