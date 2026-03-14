@@ -27,7 +27,7 @@
 
 ## Gate Criteria (Phase 1)
 
-23 of 40 criteria passing. Updated 2026-03-14.
+25 of 40 criteria passing. Updated 2026-03-14.
 
 | Status | Criteria |
 |--------|----------|
@@ -42,7 +42,8 @@
 | ✅ (new) | Dead letter nullability: test_defi_lending_nullability_gate passes — null borrow_apy valid, null utilization_rate dead-lettered as NULL_VIOLATION. |
 | ✅ (new) | FINAL query benchmarks: 50k in 0.349s (< 10s), 500k in 0.746s (< 60s). Report at `.claude/reports/benchmark_final_query.json`. |
 | ✅ (new) | Export benchmark baseline: steady-state 3.0s compute / 14.5s total (972 rows, 3 partitions); bulk catchup 131.5s compute (6k rows, 99 partitions). Regression thresholds set at 3x headroom. Report at `.claude/reports/benchmark_export_baseline.json`. |
-| ❌ Needs data | C2 archive/expiry/partition jobs, C2 reprocessing test |
+| ✅ (new) | C2 archive/expiry/partition jobs: `bronze_archive_job` running daily 02:00 UTC (SUCCESS on Mar 13 + Mar 14). Archive asset (178ms) + expiry audit (202ms) both healthy. 0 partitions archived (data too recent — correct behavior). 0 at-risk partitions. DuckDB partition discovery operational. `bronze_archive_log`: 1 verified entry from initial test. |
+| ✅ (new) | C2 reprocessing test: 7/8 steps PASS (step 8 deferred — Phase 2 feature layer). Tiingo 2019-01-01..03 round-tripped: hot→archive→hot→sync→Silver FINAL (12 rows, no duplicates)→Gold export SUCCESS. 0 dead letters. Report at `.claude/reports/C2_reprocessing_test.json`. |
 
 Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 
