@@ -27,7 +27,7 @@
 
 ## Gate Criteria (Phase 1)
 
-22 of 40 criteria passing. Updated 2026-03-14.
+23 of 40 criteria passing. Updated 2026-03-14.
 
 | Status | Criteria |
 |--------|----------|
@@ -41,7 +41,8 @@
 | ✅ (new) | GE checkpoint: bronze_core suite runs on every sync. 6 expectations execute (2 conditional with no triggers — no range bounds defined). Dead letter routing confirmed: 63,543 UNKNOWN_INSTRUMENT + 3,910 DUPLICATE_OBSERVATION with valid rejection codes. |
 | ✅ (new) | Dead letter nullability: test_defi_lending_nullability_gate passes — null borrow_apy valid, null utilization_rate dead-lettered as NULL_VIOLATION. |
 | ✅ (new) | FINAL query benchmarks: 50k in 0.349s (< 10s), 500k in 0.746s (< 60s). Report at `.claude/reports/benchmark_final_query.json`. |
-| ❌ Needs data | Export benchmark baseline, C2 archive/expiry/partition jobs, C2 reprocessing test |
+| ✅ (new) | Export benchmark baseline: steady-state 3.0s compute / 14.5s total (972 rows, 3 partitions); bulk catchup 131.5s compute (6k rows, 99 partitions). Regression thresholds set at 3x headroom. Report at `.claude/reports/benchmark_export_baseline.json`. |
+| ❌ Needs data | C2 archive/expiry/partition jobs, C2 reprocessing test |
 
 Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 
