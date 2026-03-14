@@ -12,6 +12,7 @@ import pyarrow.compute as pc
 from dagster import (
     AssetExecutionContext,
     AssetKey,
+    Config,
     MetadataValue,
     Output,
     asset,
@@ -57,16 +58,12 @@ def _get_rolling_avg(instance) -> float:
 
     Returns 0 if no history (first run — anomaly guard allows up to 2M).
     """
-    from dagster import DagsterEventType, EventRecordsFilter
-
     try:
-        records = instance.get_event_records(
-            EventRecordsFilter(
-                event_type=DagsterEventType.ASSET_MATERIALIZATION,
-                asset_key=AssetKey("gold_observations"),
-            ),
+        result = instance.fetch_materializations(
+            AssetKey("gold_observations"),
             limit=7,
         )
+        records = result.records
     except Exception:
         return 0
 
@@ -75,13 +72,17 @@ def _get_rolling_avg(instance) -> float:
 
     counts = []
     for record in records:
-        mat = record.event_log_entry.dagster_event.step_materialization_data
-        if mat and mat.materialization and mat.materialization.metadata:
-            rows_entry = mat.materialization.metadata.get("rows_exported")
+        mat = record.asset_materialization
+        if mat and mat.metadata:
+            rows_entry = mat.metadata.get("rows_exported")
             if rows_entry is not None:
                 counts.append(rows_entry.value)
 
     return sum(counts) / len(counts) if counts else 0
+
+
+class GoldExportConfig(Config):
+    force_backfill: bool = False
 
 
 @asset(
@@ -89,7 +90,7 @@ def _get_rolling_avg(instance) -> float:
     required_resource_keys={"ch_export_reader", "pg_forge_reader", "iceberg_catalog_gold"},
     metadata={"layer": "gold", "schedule": "hourly"},
 )
-def gold_observations(context: AssetExecutionContext):
+def gold_observations(context: AssetExecutionContext, config: GoldExportConfig):
     """Export observations from Silver (ClickHouse) to Gold (Iceberg on MinIO).
 
     Incremental watermark-based export. Merges with existing partitions
@@ -125,8 +126,7 @@ def gold_observations(context: AssetExecutionContext):
         )
 
     # 3. Anomaly guard
-    run_config = context.run_config.get("ops", {}).get("gold_observations", {}).get("config", {})
-    force_backfill = run_config.get("force_backfill", False)
+    force_backfill = config.force_backfill
     rolling_avg = _get_rolling_avg(context.instance)
     if not check_anomaly_guard(len(rows), rolling_avg, force_backfill):
         raise RuntimeError(

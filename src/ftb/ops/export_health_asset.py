@@ -10,8 +10,6 @@ from datetime import UTC, datetime
 from dagster import (
     AssetExecutionContext,
     AssetKey,
-    DagsterEventType,
-    EventRecordsFilter,
     MetadataValue,
     Output,
     asset,
@@ -26,13 +24,11 @@ def _get_last_export_info(instance) -> tuple[datetime | None, int | None, int]:
     Returns (last_success_at, rows_exported, consecutive_failures).
     """
     try:
-        records = instance.get_event_records(
-            EventRecordsFilter(
-                event_type=DagsterEventType.ASSET_MATERIALIZATION,
-                asset_key=AssetKey("gold_observations"),
-            ),
+        result = instance.fetch_materializations(
+            AssetKey("gold_observations"),
             limit=10,
         )
+        records = result.records
     except Exception:
         return None, None, 0
 
@@ -45,13 +41,12 @@ def _get_last_export_info(instance) -> tuple[datetime | None, int | None, int]:
     consecutive_failures = 0
 
     for record in records:
-        mat = record.event_log_entry.dagster_event.step_materialization_data
-        if mat and mat.materialization and mat.materialization.metadata:
-            meta = mat.materialization.metadata
-            rows_entry = meta.get("rows_exported")
+        mat = record.asset_materialization
+        if mat and mat.metadata:
+            rows_entry = mat.metadata.get("rows_exported")
             if rows_entry is not None:
                 if last_success_at is None:
-                    last_success_at = record.event_log_entry.timestamp
+                    last_success_at = record.timestamp
                     rows_exported = rows_entry.value
                 break
         # No materialization data = failure
