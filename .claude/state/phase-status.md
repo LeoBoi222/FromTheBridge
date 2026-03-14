@@ -27,7 +27,7 @@
 
 ## Gate Criteria (Phase 1)
 
-18 of 40 criteria passing. Updated 2026-03-14.
+19 of 40 criteria passing. Updated 2026-03-14.
 
 | Status | Criteria |
 |--------|----------|
@@ -38,7 +38,8 @@
 | ❌ EDS-blocked | live collection, rejection rate, coverage, Tiingo history (2019 not 2014), wei fix, tier promotion (0 signal_eligible), PF-6 utilization unit, FRED series (Gold/MOVE/BOJ — not yet in empire.observations), DeFiLlama yields, ingested_at correctness, priority-1 backfill, BLC-01 rsync |
 | ✅ (new) | Export round-trip verified: Silver → Gold export → DuckDB read. 5,746 rows across 4 domains (derivatives/6, defi/2, flows/3, macro/25). PyIceberg→Arrow→DuckDB hybrid read (ADR-002 updated). |
 | ✅ (new) | GE checkpoint: bronze_core suite runs on every sync. 6 expectations execute (2 conditional with no triggers — no range bounds defined). Dead letter routing confirmed: 63,543 UNKNOWN_INSTRUMENT + 3,910 DUPLICATE_OBSERVATION with valid rejection codes. |
-| ❌ Needs data | FINAL query benchmarks (50k/500k), export benchmark baseline, dead letter nullability, C2 archive/expiry/partition jobs, C2 reprocessing test |
+| ✅ (new) | Dead letter nullability: test_defi_lending_nullability_gate passes — null borrow_apy valid, null utilization_rate dead-lettered as NULL_VIOLATION. |
+| ❌ Needs data | FINAL query benchmarks (50k/500k), export benchmark baseline, C2 archive/expiry/partition jobs, C2 reprocessing test |
 
 Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 

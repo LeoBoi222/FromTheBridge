@@ -259,6 +259,39 @@ class TestEdgeCases:
         assert len(valid) == 1
         assert len(dead) == 0
 
+    def test_defi_lending_nullability_gate(self):
+        """Gate criterion: null borrow_apy valid, null utilization_rate dead-lettered.
+
+        Per v4.0 §2667: borrow_apy is nullable (supply-only pools lack borrow side),
+        utilization_rate is non-nullable (NULL_VIOLATION).
+        """
+        catalog = {
+            "defi.lending.borrow_apy": {
+                "is_nullable": True,
+                "expected_range_low": None,
+                "expected_range_high": None,
+            },
+            "defi.lending.utilization_rate": {
+                "is_nullable": False,
+                "expected_range_low": None,
+                "expected_range_high": None,
+            },
+        }
+        instruments = {"__market__"}
+
+        # Null borrow_apy should pass (nullable)
+        obs_valid = [_obs("defi.lending.borrow_apy", None, None)]
+        valid, dead, _ = validate_with_ge(obs_valid, catalog, instruments)
+        assert len(valid) == 1
+        assert len(dead) == 0
+
+        # Null utilization_rate should be dead-lettered (non-nullable)
+        obs_invalid = [_obs("defi.lending.utilization_rate", None, None)]
+        valid, dead, _ = validate_with_ge(obs_invalid, catalog, instruments)
+        assert len(valid) == 0
+        assert len(dead) == 1
+        assert dead[0].rejection_code == "NULL_VIOLATION"
+
     def test_partial_range_bounds_low_only(self, metric_catalog, instrument_set):
         """defi.tvl.total_usd has range_low=0 but no range_high."""
         obs = [_obs("defi.tvl.total_usd", None, -100.0)]
