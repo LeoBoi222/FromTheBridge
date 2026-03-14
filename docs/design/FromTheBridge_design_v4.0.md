@@ -2521,7 +2521,7 @@ next run retries the full delta (exactly-once semantics on the Gold side).
 **Gold write — partition overwrite (not append):**
 
 1. Derive touched partitions from delta rows: `(year_month, metric_domain)`.
-2. Read existing Gold partition via DuckDB Iceberg extension.
+2. Read existing Gold partition via PyIceberg (SqlCatalog → Arrow).
 3. Merge by `data_version` — for duplicate `(metric_id, instrument_id, observed_at)`
    tuples, keep the row with the higher `data_version`.
 4. Atomic Iceberg partition overwrite. Partial write due to MinIO interruption leaves
@@ -2550,7 +2550,7 @@ domains (`spot`, `price`, `metadata`) do not produce Gold-layer exports in Phase
 | metric_domain | STRING | Partition key: derivatives, macro, flows, defi, onchain |
 | year_month | STRING | Partition key: YYYY-MM format |
 
-Partitioned by `(year_month, metric_domain)`. Written by DuckDB Iceberg DML.
+Partitioned by `(year_month, metric_domain)`. Written by PyIceberg partition overwrite.
 Marts table schemas defined before Phase 2 build prompt (FTB-24 remaining scope).
 
 **Anomaly guard:** Export fails if delta exceeds 10× rolling 7-day average or >2M rows.
@@ -4883,10 +4883,19 @@ anomaly guard, and partition overwrite mechanics.
 
 #### ADR-002: Apache Iceberg as Bronze and Gold Storage Format
 
-**Decision:** Apache Iceberg tables on MinIO for both Bronze and Gold. DuckDB with
-`iceberg` extension for both reads and writes (DML support in v1.4.2+). Single engine
-for analytical read/write path. PyIceberg available as fallback if DuckDB Iceberg write
-support proves insufficient during Phase 1.
+**Decision:** Apache Iceberg tables on MinIO for both Bronze and Gold. PyIceberg
+(SqlCatalog) is the primary interface for table management, writes, and reads.
+DuckDB queries the Arrow tables produced by PyIceberg — not via `iceberg_scan()`.
+
+**Rationale (locked 2026-03-14):** PyIceberg's SqlCatalog uses UUID-based metadata
+naming (`00075-<uuid>.metadata.json`) which DuckDB's `iceberg_scan()` cannot resolve
+without a `version-hint.text` file or REST catalog. Rather than maintaining a
+compatibility shim (writing `version-hint.text` + metadata copies after every Iceberg
+commit), the stack takes an honest dependency: PyIceberg reads Iceberg → produces
+Arrow tables → DuckDB queries Arrow in-process. This is a real pattern, not a
+workaround. `forge_compute` and `empire_fastapi` require PyIceberg as a dependency
+for Gold reads. DuckDB remains the analytical engine (ADR-004); PyIceberg is the
+Iceberg catalog interface.
 
 **Disqualified alternatives:**
 - Raw Parquet on MinIO: No time travel, no ACID, no schema evolution.

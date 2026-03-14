@@ -11,7 +11,7 @@
 ## Deployed on proxmox
 
 - PostgreSQL `forge` schema: 12 catalog tables, seed data above
-- ClickHouse `forge`: 3 tables (observations, dead_letter, current_values MV), ~8.7k rows
+- ClickHouse `forge`: 3 tables (observations, dead_letter, current_values MV), ~21k rows
 - MinIO: bronze-hot (90d lifecycle), bronze-archive, gold buckets
 - Dagster: 4 containers (webserver :3010, daemon, code_ftb, code_eds)
 - empire_to_forge_sync: 6h schedule, 38 eds_derived metrics (0012 promotion + 0014 DeFi correction)
@@ -27,7 +27,7 @@
 
 ## Gate Criteria (Phase 1)
 
-14 of 40 criteria passing. Updated 2026-03-14.
+15 of 40 criteria passing. Updated 2026-03-14.
 
 | Status | Criteria |
 |--------|----------|
@@ -36,7 +36,8 @@
 | ⚠️ | NAS backup (script exists, timer inactive), C2 archive credentials (user exists, isolation unverified) |
 | ✅ (0012) | Migration complete (35 UPDATE + 4 INSERT, 41 eds_derived total → 38 after 0014 DeFi correction), CFTC COT (3 of 4 metrics — institutional_long_pct pending EDS) |
 | ❌ EDS-blocked | live collection, rejection rate, coverage, Tiingo history (2019 not 2014), wei fix, tier promotion (0 signal_eligible), PF-6 utilization unit, FRED series (Gold/MOVE/BOJ — not yet in empire.observations), DeFiLlama yields, ingested_at correctness, priority-1 backfill, BLC-01 rsync |
-| ❌ Needs data | Export round-trip, FINAL query benchmarks (50k/500k), export benchmark baseline, GE checkpoint, dead letter nullability, C2 archive/expiry/partition jobs, C2 reprocessing test |
+| ✅ (new) | Export round-trip verified: Silver → Gold export → DuckDB read. 5,746 rows across 4 domains (derivatives/6, defi/2, flows/3, macro/25). PyIceberg→Arrow→DuckDB hybrid read (ADR-002 updated). |
+| ❌ Needs data | FINAL query benchmarks (50k/500k), export benchmark baseline, GE checkpoint, dead letter nullability, C2 archive/expiry/partition jobs, C2 reprocessing test |
 
 Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 
@@ -62,10 +63,11 @@ Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 - CFTC: EDS produces 7 metrics. 4 map to forge. 3 stay EDS-only.
 - Per-protocol/per-chain DeFi metrics (tvl_usd, fees_usd_24h, volume_by_chain_usd) stay EDS-only — instrument_ids are protocol slugs/chain names, not forge instruments. FTB uses aggregates.
 - Stablecoins: top-3 only (USDT-USD, USDC-USD, DAI-USD). 200+ others dropped at EDS emission.
+- Gold reads: PyIceberg→Arrow→DuckDB (not DuckDB `iceberg_scan()`). ADR-002 updated. `forge_compute` and API require PyIceberg dependency.
 
 ## Next Actions
 
-1. **Export round-trip verification** (Bronze → Silver → Gold → DuckDB)
+1. ~~**Export round-trip verification**~~ — **COMPLETE (2026-03-14).** 5,746 rows, 36 metrics, 4 domains. ADR-002 updated: PyIceberg→Arrow→DuckDB locked as permanent read path.
 2. **FINAL query benchmarks** (50k/500k row targets)
 3. **GE checkpoint** (bronze_core suite)
 4. **Tier promotion run**
