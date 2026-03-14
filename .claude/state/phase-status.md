@@ -14,7 +14,7 @@
 - ClickHouse `forge`: 3 tables (observations, dead_letter, current_values MV), ~21k rows
 - MinIO: bronze-hot (90d lifecycle), bronze-archive, gold buckets
 - Dagster: 4 containers (webserver :3010, daemon, code_ftb, code_eds)
-- empire_to_forge_sync: 6h schedule, 38 eds_derived metrics (0012 promotion + 0014 DeFi correction)
+- empire_to_forge_sync: 6h schedule, 39 eds_derived metrics (0012 promotion + 0014 DeFi correction + 0015 institutional_long_pct)
 - Ops health: 3 assets on 30m schedule. Bronze archive: daily 02:00 UTC. Gold export: hourly :15.
 - Instruments: BTC-USD, ETH-USD, SOL-USD, USDT-USD, USDC-USD, DAI-USD, __market__ (0013 migration)
 
@@ -34,7 +34,7 @@
 | ✅ | Dagster services healthy, Dagster in docker-compose, observations_written, redistribution flags, C2 bronze-archive bucket, C2 bronze_archive_log DDL, historical depth (backfill_depth_days), training window viability (T5 report), dead letter triage (0 old), ops assets, runbooks (FTB-01–09), ops credentials, calendar schema |
 | ✅ (new) | Sync auto-flow verified (38/38 metrics, 100% coverage, 7,960 obs written) |
 | ✅ | NAS backup (systemd timer active, daily 04:00 UTC), C2 archive credential isolation verified (bronze-archive-rw cannot write bronze-hot) |
-| ✅ (0012) | Migration complete (35 UPDATE + 4 INSERT, 41 eds_derived total → 38 after 0014 DeFi correction), CFTC COT (3 of 4 metrics — institutional_long_pct pending EDS) |
+| ✅ (0012) | Migration complete (35 UPDATE + 4 INSERT, 41 eds_derived total → 39 after 0014 DeFi correction + 0015 COT), CFTC COT complete (4 of 4 metrics in catalog) |
 | ❌ EDS-blocked | live collection, rejection rate, coverage, Tiingo history (2019 not 2014), wei fix, tier promotion (0 signal_eligible), PF-6 utilization unit, FRED series (Gold/MOVE/BOJ — not yet in empire.observations), DeFiLlama yields, ingested_at correctness, priority-1 backfill, BLC-01 rsync |
 | ✅ (new) | Export round-trip verified: Silver → Gold export → DuckDB read. 5,746 rows across 4 domains (derivatives/6, defi/2, flows/3, macro/25). PyIceberg→Arrow→DuckDB hybrid read (ADR-002 updated). |
 | ❌ Needs data | FINAL query benchmarks (50k/500k), export benchmark baseline, GE checkpoint, dead letter nullability, C2 archive/expiry/partition jobs, C2 reprocessing test |
@@ -50,7 +50,7 @@ Detailed pass conditions: v4.0 §Phase Gates (lines 4245–4286).
 3. ~~**Sync auto-flows**~~ — **COMPLETE (2026-03-14).** Manual sync verified 38/38 metrics flowing, 100% coverage. Instrument format fixes deployed to EDS (COT/ETF: BTC→BTC-USD, stablecoins: top-3 filter with -USD pairs). 3 per-protocol/per-chain DeFi metrics reclassified as EDS-only (0014).
 
 **Pending EDS delivery** (add catalog row ONLY after metric appears in `empire.observations`):
-- `macro.cot.institutional_long_pct` — CFTC derivation not yet deployed
+- ~~`macro.cot.institutional_long_pct`~~ — **COMPLETE (2026-03-14).** 672 obs in empire, catalog row added (0015).
 - `defi.protocol.revenue_usd_24h` — not yet in empire.observations
 - `macro.commodity.gold` — FRED series not yet in empire.observations
 - `macro.liquidity.boj_balance_sheet` — FRED series not yet in empire.observations
